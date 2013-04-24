@@ -38,7 +38,6 @@
 #include "gimpcanvas.h"
 #include "gimpcanvastransformpreview.h"
 #include "gimpdisplayshell.h"
-#include "gimpdisplayshell-transform.h"
 
 
 #define INT_MULT(a,b,t)    ((t) = (a) * (b) + 0x80, ((((t) >> 8) + (t)) >> 8))
@@ -83,20 +82,18 @@ struct _GimpCanvasTransformPreviewPrivate
 
 /*  local function prototypes  */
 
-static void             gimp_canvas_transform_preview_set_property (GObject          *object,
-                                                                    guint             property_id,
-                                                                    const GValue     *value,
-                                                                    GParamSpec       *pspec);
-static void             gimp_canvas_transform_preview_get_property (GObject          *object,
-                                                                    guint             property_id,
-                                                                    GValue           *value,
-                                                                    GParamSpec       *pspec);
+static void             gimp_canvas_transform_preview_set_property (GObject        *object,
+                                                                    guint           property_id,
+                                                                    const GValue   *value,
+                                                                    GParamSpec     *pspec);
+static void             gimp_canvas_transform_preview_get_property (GObject        *object,
+                                                                    guint           property_id,
+                                                                    GValue         *value,
+                                                                    GParamSpec     *pspec);
 
-static void             gimp_canvas_transform_preview_draw         (GimpCanvasItem   *item,
-                                                                    GimpDisplayShell *shell,
-                                                                    cairo_t          *cr);
-static cairo_region_t * gimp_canvas_transform_preview_get_extents  (GimpCanvasItem   *item,
-                                                                    GimpDisplayShell *shell);
+static void             gimp_canvas_transform_preview_draw         (GimpCanvasItem *item,
+                                                                    cairo_t        *cr);
+static cairo_region_t * gimp_canvas_transform_preview_get_extents  (GimpCanvasItem *item);
 
 static void   gimp_canvas_transform_preview_draw_quad         (GimpDrawable    *texture,
                                                                cairo_t         *cr,
@@ -344,7 +341,6 @@ gimp_canvas_transform_preview_get_property (GObject    *object,
 
 static gboolean
 gimp_canvas_transform_preview_transform (GimpCanvasItem        *item,
-                                         GimpDisplayShell      *shell,
                                          cairo_rectangle_int_t *extents)
 {
   GimpCanvasTransformPreviewPrivate *private = GET_PRIVATE (item);
@@ -379,18 +375,18 @@ gimp_canvas_transform_preview_transform (GimpCanvasItem        *item,
       gdouble dx3, dy3;
       gdouble dx4, dy4;
 
-      gimp_display_shell_transform_xy_f (shell,
-                                         tx1, ty1,
-                                         &dx1, &dy1);
-      gimp_display_shell_transform_xy_f (shell,
-                                         tx2, ty2,
-                                         &dx2, &dy2);
-      gimp_display_shell_transform_xy_f (shell,
-                                         tx3, ty3,
-                                         &dx3, &dy3);
-      gimp_display_shell_transform_xy_f (shell,
-                                         tx4, ty4,
-                                         &dx4, &dy4);
+      gimp_canvas_item_transform_xy_f (item,
+                                       tx1, ty1,
+                                       &dx1, &dy1);
+      gimp_canvas_item_transform_xy_f (item,
+                                       tx2, ty2,
+                                       &dx2, &dy2);
+      gimp_canvas_item_transform_xy_f (item,
+                                       tx3, ty3,
+                                       &dx3, &dy3);
+      gimp_canvas_item_transform_xy_f (item,
+                                       tx4, ty4,
+                                       &dx4, &dy4);
 
       extents->x      = (gint) floor (MIN4 (dx1, dx2, dx3, dx4));
       extents->y      = (gint) floor (MIN4 (dy1, dy2, dy3, dy4));
@@ -405,9 +401,8 @@ gimp_canvas_transform_preview_transform (GimpCanvasItem        *item,
 }
 
 static void
-gimp_canvas_transform_preview_draw (GimpCanvasItem   *item,
-                                    GimpDisplayShell *shell,
-                                    cairo_t          *cr)
+gimp_canvas_transform_preview_draw (GimpCanvasItem *item,
+                                    cairo_t        *cr)
 {
   GimpCanvasTransformPreviewPrivate *private = GET_PRIVATE (item);
   GimpChannel                       *mask;
@@ -431,7 +426,7 @@ gimp_canvas_transform_preview_draw (GimpCanvasItem   *item,
   opacity = private->opacity * 255.999;
 
   /* only draw convex polygons */
-  if (! gimp_canvas_transform_preview_transform (item, shell, NULL))
+  if (! gimp_canvas_transform_preview_transform (item, NULL))
     return;
 
   mask      = NULL;
@@ -478,16 +473,16 @@ gimp_canvas_transform_preview_draw (GimpCanvasItem   *item,
     gdouble tx1, ty1;                                           \
     gdouble tx2, ty2;                                           \
                                                                 \
-    u[sub][index] = private->x1 + (dx * (col + (index & 1)));   \
-    v[sub][index] = private->y1 + (dy * (row + (index >> 1)));  \
+    tx2 = private->x1 + (dx * (col + (index & 1)));             \
+    ty2 = private->y1 + (dy * (row + (index >> 1)));            \
                                                                 \
     gimp_matrix3_transform_point (&private->transform,          \
-                                  u[sub][index], v[sub][index], \
+                                  tx2, ty2,                     \
                                   &tx1, &ty1);                  \
                                                                 \
-    gimp_display_shell_transform_xy_f (shell,                   \
-                                       tx1, ty1,                \
-                                       &tx2, &ty2);             \
+    gimp_canvas_item_transform_xy_f (item,                      \
+                                     tx1, ty1,                  \
+                                     &tx2, &ty2);               \
     x[sub][index] = (gint) tx2;                                 \
     y[sub][index] = (gint) ty2;                                 \
                                                                 \
@@ -563,12 +558,11 @@ gimp_canvas_transform_preview_draw (GimpCanvasItem   *item,
 }
 
 static cairo_region_t *
-gimp_canvas_transform_preview_get_extents (GimpCanvasItem   *item,
-                                           GimpDisplayShell *shell)
+gimp_canvas_transform_preview_get_extents (GimpCanvasItem *item)
 {
   cairo_rectangle_int_t rectangle;
 
-  if (gimp_canvas_transform_preview_transform (item, shell, &rectangle))
+  if (gimp_canvas_transform_preview_transform (item, &rectangle))
     return cairo_region_create_rectangle (&rectangle);
 
   return NULL;
@@ -728,7 +722,7 @@ gimp_canvas_transform_preview_draw_tri (GimpDrawable    *texture,
 
   /* sort vertices in order of y-coordinate */
 
-  for (j = 0; j < 3; j++)
+  for (j = 0; j < 2; j++)
     for (k = j + 1; k < 3; k++)
       if (y[k] < y[j])
         {
@@ -1177,85 +1171,50 @@ gimp_canvas_transform_preview_trace_tri_edge (gint *dest,
                                               gint  x2,
                                               gint  y2)
 {
-  const gint  dy = y2 - y1;
-  gint        dx;
-  gint        xdir;
+  const gint  dx   = x2 - x1;
+  const gint  dy   = y2 - y1;
+  gint        b    = dy;
+  gint       *dptr = dest;
   gint        errorterm;
-  gint        b;
-  gint       *dptr;
 
   if (dy <= 0)
     return;
 
   g_return_if_fail (dest != NULL);
 
-  errorterm = 0;
-  dptr      = dest;
+  if (dx >= 0)
+    {
+      errorterm = 0;
 
-  if (x2 < x1)
-    {
-      dx = x1 - x2;
-      xdir = -1;
-    }
-  else
-    {
-      dx = x2 - x1;
-      xdir = 1;
-    }
-
-  if (dx >= dy)
-    {
-      b = dy;
-      while (b --)
+      while (b--)
         {
-          *dptr = x1;
+          *dptr++ = x1;
+
           errorterm += dx;
 
           while (errorterm > dy)
             {
-              x1 += xdir;
+              x1++;
               errorterm -= dy;
             }
-
-          dptr ++;
         }
     }
-  else if (dy >= dx)
+  else
     {
-      b = dy;
-      while (b --)
-        {
-          *dptr = x1;
-          errorterm += dx;
+      errorterm = dy;
 
-          if (errorterm > dy)
+      while (b--)
+        {
+          while (errorterm > dy)
             {
-              x1 += xdir;
+              x1--;
               errorterm -= dy;
             }
 
-          dptr ++;
-        }
-    }
-  else if (dx == 0)
-    {
-      b = dy;
-      while (b --)
-        {
-          *dptr = x1;
+          /* dx is negative here, so this is effectively an addition: */
+          errorterm -= dx;
 
-          dptr ++;
-        }
-    }
-  else /* dy == dx */
-    {
-      b = dy;
-      while (b --)
-        {
-          *dptr = x1;
-          x1 += xdir;
-
-          dptr ++;
+          *dptr++ = x1;
         }
     }
 }

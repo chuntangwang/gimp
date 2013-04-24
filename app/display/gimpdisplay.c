@@ -34,6 +34,8 @@
 #include "core/gimpimage.h"
 #include "core/gimpprogress.h"
 
+#include "widgets/gimpdialogfactory.h"
+
 #include "tools/gimptool.h"
 #include "tools/tool_manager.h"
 
@@ -452,6 +454,11 @@ gimp_display_new (Gimp              *gimp,
 
   gimp_image_window_add_shell (window, shell);
   gimp_display_shell_present (shell);
+
+  /* make sure the docks are visible, in case all other image windows
+   * are iconified, see bug #686544.
+   */
+  gimp_dialog_factory_show_with_display (dialog_factory);
 
   g_signal_connect (gimp_display_shell_get_statusbar (shell), "cancel",
                     G_CALLBACK (gimp_display_progress_canceled),
@@ -879,13 +886,14 @@ gimp_display_paint_area (GimpDisplay *display,
   h = (y2 - y1);
 
   /*  display the area  */
-  gimp_display_shell_transform_xy_f (shell, x,     y,     &x1_f, &y1_f);
-  gimp_display_shell_transform_xy_f (shell, x + w, y + h, &x2_f, &y2_f);
+  gimp_display_shell_transform_bounds (shell,
+                                       x, y, x + w, y + h,
+                                       &x1_f, &y1_f, &x2_f, &y2_f);
 
   /*  make sure to expose a superset of the transformed sub-pixel expose
    *  area, not a subset. bug #126942. --mitch
    *
-   *  also acommodate for spill introduced by potential box filtering.
+   *  also accommodate for spill introduced by potential box filtering.
    *  (bug #474509). --simon
    */
   x1 = floor (x1_f - 0.5);

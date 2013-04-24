@@ -32,7 +32,6 @@
 
 #include "gimpcanvaspolygon.h"
 #include "gimpdisplayshell.h"
-#include "gimpdisplayshell-transform.h"
 
 
 enum
@@ -60,20 +59,18 @@ struct _GimpCanvasPolygonPrivate
 
 /*  local function prototypes  */
 
-static void             gimp_canvas_polygon_finalize     (GObject          *object);
-static void             gimp_canvas_polygon_set_property (GObject          *object,
-                                                          guint             property_id,
-                                                          const GValue     *value,
-                                                          GParamSpec       *pspec);
-static void             gimp_canvas_polygon_get_property (GObject          *object,
-                                                          guint             property_id,
-                                                          GValue           *value,
-                                                          GParamSpec       *pspec);
-static void             gimp_canvas_polygon_draw         (GimpCanvasItem   *item,
-                                                          GimpDisplayShell *shell,
-                                                          cairo_t          *cr);
-static cairo_region_t * gimp_canvas_polygon_get_extents  (GimpCanvasItem   *item,
-                                                          GimpDisplayShell *shell);
+static void             gimp_canvas_polygon_finalize     (GObject        *object);
+static void             gimp_canvas_polygon_set_property (GObject        *object,
+                                                          guint           property_id,
+                                                          const GValue   *value,
+                                                          GParamSpec     *pspec);
+static void             gimp_canvas_polygon_get_property (GObject        *object,
+                                                          guint           property_id,
+                                                          GValue         *value,
+                                                          GParamSpec     *pspec);
+static void             gimp_canvas_polygon_draw         (GimpCanvasItem *item,
+                                                          cairo_t        *cr);
+static cairo_region_t * gimp_canvas_polygon_get_extents  (GimpCanvasItem *item);
 
 
 G_DEFINE_TYPE (GimpCanvasPolygon, gimp_canvas_polygon,
@@ -198,20 +195,19 @@ gimp_canvas_polygon_get_property (GObject    *object,
 }
 
 static void
-gimp_canvas_polygon_transform (GimpCanvasItem   *item,
-                               GimpDisplayShell *shell,
-                               GimpVector2      *points)
+gimp_canvas_polygon_transform (GimpCanvasItem *item,
+                               GimpVector2    *points)
 {
   GimpCanvasPolygonPrivate *private = GET_PRIVATE (item);
   gint                      i;
 
   for (i = 0; i < private->n_points; i++)
     {
-      gimp_display_shell_transform_xy_f (shell,
-                                         private->points[i].x,
-                                         private->points[i].y,
-                                         &points[i].x,
-                                         &points[i].y);
+      gimp_canvas_item_transform_xy_f (item,
+                                       private->points[i].x,
+                                       private->points[i].y,
+                                       &points[i].x,
+                                       &points[i].y);
 
       points[i].x = floor (points[i].x) + 0.5;
       points[i].y = floor (points[i].y) + 0.5;
@@ -219,9 +215,8 @@ gimp_canvas_polygon_transform (GimpCanvasItem   *item,
 }
 
 static void
-gimp_canvas_polygon_draw (GimpCanvasItem   *item,
-                          GimpDisplayShell *shell,
-                          cairo_t          *cr)
+gimp_canvas_polygon_draw (GimpCanvasItem *item,
+                          cairo_t        *cr)
 {
   GimpCanvasPolygonPrivate *private = GET_PRIVATE (item);
   GimpVector2              *points;
@@ -229,7 +224,7 @@ gimp_canvas_polygon_draw (GimpCanvasItem   *item,
 
   points = g_new0 (GimpVector2, private->n_points);
 
-  gimp_canvas_polygon_transform (item, shell, points);
+  gimp_canvas_polygon_transform (item, points);
 
   cairo_move_to (cr, points[0].x, points[0].y);
 
@@ -247,8 +242,7 @@ gimp_canvas_polygon_draw (GimpCanvasItem   *item,
 }
 
 static cairo_region_t *
-gimp_canvas_polygon_get_extents (GimpCanvasItem   *item,
-                                 GimpDisplayShell *shell)
+gimp_canvas_polygon_get_extents (GimpCanvasItem *item)
 {
   GimpCanvasPolygonPrivate *private = GET_PRIVATE (item);
   cairo_rectangle_int_t     rectangle;
@@ -258,7 +252,7 @@ gimp_canvas_polygon_get_extents (GimpCanvasItem   *item,
 
   points = g_new0 (GimpVector2, private->n_points);
 
-  gimp_canvas_polygon_transform (item, shell, points);
+  gimp_canvas_polygon_transform (item, points);
 
   x1 = floor (points[0].x - 1.5);
   y1 = floor (points[0].y - 1.5);

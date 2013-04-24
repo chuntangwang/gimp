@@ -1,5 +1,7 @@
 ## Process this file with automake to produce Makefile.in
 
+libgimpbase = $(top_builddir)/libgimpbase/libgimpbase-$(GIMP_API_VERSION).la
+
 if WITH_PDBGEN
 D_pdbgen = pdbgen
 else
@@ -8,7 +10,19 @@ endif
 
 SUBDIRS = $(D_pdbgen)
 
+if OS_WIN32
+
+bin_PROGRAMS = \
+	gimptool-2.0 \
+	gimp-debug-resume
+
+gimp_debug_resume_SOURCES = gimp-debug-resume.c
+
+else
+
 bin_PROGRAMS = gimptool-2.0
+
+endif
 
 noinst_PROGRAMS = test-clipboard
 
@@ -19,6 +33,7 @@ gimptool_2_0_SOURCES = \
 	gimptool.c
 
 gimptool_2_0_LDADD = \
+	$(libgimpbase)			\
 	$(GTK_LIBS)
 
 kernelgen_SOURCES = kernelgen.c

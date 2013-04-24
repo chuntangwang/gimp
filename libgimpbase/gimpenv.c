@@ -91,7 +91,8 @@ static const char* datadir = DATADIR;
 
 
 static gchar * gimp_env_get_dir   (const gchar *gimp_env_name,
-                                   const gchar *env_dir);
+                                   const gchar *compile_time_dir,
+                                   const gchar *relative_subdir);
 #ifdef G_OS_WIN32
 static gchar * get_special_folder (gint         csidl);
 #endif
@@ -132,7 +133,9 @@ gimp_env_init (gboolean plug_in)
       /* Set $LD_LIBRARY_PATH to ensure that plugins can be loaded. */
 
       const gchar *ldpath = g_getenv ("LD_LIBRARY_PATH");
-      gchar       *libdir = _gimp_reloc_find_lib_dir (NULL);
+      gchar       *libdir = g_build_filename (gimp_installation_directory (),
+                                              "lib",
+                                              NULL);
 
       if (ldpath && *ldpath)
         {
@@ -291,7 +294,7 @@ gimp_directory (void)
 
 #ifdef G_OS_WIN32
 
-/* Taken and slightly modified from glib 2.34.0 code. */
+/* Taken from glib 2.35 code. */
 static gchar *
 get_special_folder (int csidl)
 {
@@ -301,7 +304,7 @@ get_special_folder (int csidl)
   BOOL         b;
   gchar       *retval = NULL;
 
-  hr = SHGetFolderLocation (NULL, csidl, NULL, 0, &pidl);
+  hr = SHGetSpecialFolderLocation (NULL, csidl, &pidl);
   if (hr == S_OK)
     {
       b = SHGetPathFromIDListW (pidl, path);
@@ -317,7 +320,7 @@ static HMODULE libgimpbase_dll = NULL;
 
 /* Minimal DllMain that just stores the handle to this DLL */
 
-BOOL WINAPI			/* Avoid silly "no previous prototype" gcc warning */
+BOOL WINAPI /* Avoid silly "no previous prototype" gcc warning */
 DllMain (HINSTANCE hinstDLL,
 	 DWORD     fdwReason,
 	 LPVOID    lpvReserved);
@@ -367,39 +370,9 @@ gimp_installation_directory (void)
 
 #ifdef G_OS_WIN32
 
-  {
-    /* Figure it out from the location of this DLL */
-    gchar *filename;
-    gchar *sep1, *sep2;
-
-    wchar_t w_filename[MAX_PATH];
-
-    if (GetModuleFileNameW (libgimpbase_dll, w_filename, G_N_ELEMENTS (w_filename)) == 0)
-      g_error ("GetModuleFilenameW failed");
-
-    filename = g_utf16_to_utf8 (w_filename, -1, NULL, NULL, NULL);
-    if (filename == NULL)
-      g_error ("Converting module filename to UTF-8 failed");
-
-    /* If the DLL file name is of the format
-     * <foobar>\bin\*.dll, use <foobar>.
-     * Otherwise, use the directory where the DLL is.
-     */
-
-    sep1 = strrchr (filename, '\\');
-    *sep1 = '\0';
-
-    sep2 = strrchr (filename, '\\');
-    if (sep2 != NULL)
-      {
-        if (g_ascii_strcasecmp (sep2 + 1, "bin") == 0)
-          {
-            *sep2 = '\0';
-          }
-      }
-
-    toplevel = filename;
-  }
+  toplevel = g_win32_get_package_installation_directory_of_module (libgimpbase_dll);
+  if (! toplevel)
+    g_error ("g_win32_get_package_installation_directory_of_module() failed");
 
 #elif PLATFORM_OSX
 
@@ -487,9 +460,12 @@ gimp_data_directory (void)
 
   if (! gimp_data_dir)
     {
-      gchar *tmp = _gimp_reloc_find_data_dir (DATADIR);
+      gchar *tmp = g_build_filename ("share",
+                                     GIMP_PACKAGE,
+                                     GIMP_DATA_VERSION,
+                                     NULL);
 
-      gimp_data_dir = gimp_env_get_dir ("GIMP2_DATADIR", tmp);
+      gimp_data_dir = gimp_env_get_dir ("GIMP2_DATADIR", DATADIR, tmp);
       g_free (tmp);
     }
 
@@ -522,10 +498,13 @@ gimp_locale_directory (void)
 
   if (! gimp_locale_dir)
     {
-      gchar *tmp = _gimp_reloc_find_locale_dir (LOCALEDIR);
+      gchar *tmp = g_build_filename ("share",
+                                     "locale",
+                                     NULL);
 
-      gimp_locale_dir = gimp_env_get_dir ("GIMP2_LOCALEDIR", tmp);
+      gimp_locale_dir = gimp_env_get_dir ("GIMP2_LOCALEDIR", LOCALEDIR, tmp);
       g_free (tmp);
+
 #ifdef G_OS_WIN32
       tmp = g_win32_locale_filename_from_utf8 (gimp_locale_dir);
       g_free (gimp_locale_dir);
@@ -559,9 +538,12 @@ gimp_sysconf_directory (void)
 
   if (! gimp_sysconf_dir)
     {
-      gchar *tmp = _gimp_reloc_find_etc_dir (SYSCONFDIR);
+      gchar *tmp = g_build_filename ("etc",
+                                     GIMP_PACKAGE,
+                                     GIMP_SYSCONF_VERSION,
+                                     NULL);
 
-      gimp_sysconf_dir = gimp_env_get_dir ("GIMP2_SYSCONFDIR", tmp);
+      gimp_sysconf_dir = gimp_env_get_dir ("GIMP2_SYSCONFDIR", SYSCONFDIR, tmp);
       g_free (tmp);
     }
 
@@ -608,9 +590,12 @@ gimp_plug_in_directory (void)
 
   if (! gimp_plug_in_dir)
     {
-      gchar *tmp = _gimp_reloc_find_plugin_dir (PLUGINDIR);
+      gchar *tmp = g_build_filename ("lib",
+                                     GIMP_PACKAGE,
+                                     GIMP_PLUGIN_VERSION,
+                                     NULL);
 
-      gimp_plug_in_dir = gimp_env_get_dir ("GIMP2_PLUGINDIR", tmp);
+      gimp_plug_in_dir = gimp_env_get_dir ("GIMP2_PLUGINDIR", PLUGINDIR, tmp);
       g_free (tmp);
     }
 
@@ -903,7 +888,8 @@ gimp_path_get_user_writable_dir (GList *path)
 
 static gchar *
 gimp_env_get_dir (const gchar *gimp_env_name,
-                  const gchar *env_dir)
+                  const gchar *compile_time_dir,
+                  const gchar *relative_subdir)
 {
   const gchar *env = g_getenv (gimp_env_name);
 
@@ -915,12 +901,16 @@ gimp_env_get_dir (const gchar *gimp_env_name,
 
       return g_strdup (env);
     }
-  else
+  else if (compile_time_dir)
     {
-      gchar *retval = g_strdup (env_dir);
+      gchar *retval = g_strdup (compile_time_dir);
 
       gimp_path_runtime_fix (&retval);
 
       return retval;
     }
+
+  return g_build_filename (gimp_installation_directory (),
+                           relative_subdir,
+                           NULL);
 }

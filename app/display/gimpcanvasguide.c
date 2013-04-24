@@ -28,10 +28,9 @@
 
 #include "display-types.h"
 
+#include "gimpcanvas-style.h"
 #include "gimpcanvasguide.h"
 #include "gimpdisplayshell.h"
-#include "gimpdisplayshell-style.h"
-#include "gimpdisplayshell-transform.h"
 
 
 enum
@@ -60,22 +59,19 @@ struct _GimpCanvasGuidePrivate
 
 /*  local function prototypes  */
 
-static void             gimp_canvas_guide_set_property (GObject          *object,
-                                                        guint             property_id,
-                                                        const GValue     *value,
-                                                        GParamSpec       *pspec);
-static void             gimp_canvas_guide_get_property (GObject          *object,
-                                                        guint             property_id,
-                                                        GValue           *value,
-                                                        GParamSpec       *pspec);
-static void             gimp_canvas_guide_draw         (GimpCanvasItem   *item,
-                                                        GimpDisplayShell *shell,
-                                                        cairo_t          *cr);
-static cairo_region_t * gimp_canvas_guide_get_extents  (GimpCanvasItem   *item,
-                                                        GimpDisplayShell *shell);
-static void             gimp_canvas_guide_stroke       (GimpCanvasItem   *item,
-                                                        GimpDisplayShell *shell,
-                                                        cairo_t          *cr);
+static void             gimp_canvas_guide_set_property (GObject        *object,
+                                                        guint           property_id,
+                                                        const GValue   *value,
+                                                        GParamSpec     *pspec);
+static void             gimp_canvas_guide_get_property (GObject        *object,
+                                                        guint           property_id,
+                                                        GValue         *value,
+                                                        GParamSpec     *pspec);
+static void             gimp_canvas_guide_draw         (GimpCanvasItem *item,
+                                                        cairo_t        *cr);
+static cairo_region_t * gimp_canvas_guide_get_extents  (GimpCanvasItem *item);
+static void             gimp_canvas_guide_stroke       (GimpCanvasItem *item,
+                                                        cairo_t        *cr);
 
 
 G_DEFINE_TYPE (GimpCanvasGuide, gimp_canvas_guide, GIMP_TYPE_CANVAS_ITEM)
@@ -175,18 +171,18 @@ gimp_canvas_guide_get_property (GObject    *object,
 }
 
 static void
-gimp_canvas_guide_transform (GimpCanvasItem   *item,
-                             GimpDisplayShell *shell,
-                             gdouble          *x1,
-                             gdouble          *y1,
-                             gdouble          *x2,
-                             gdouble          *y2)
+gimp_canvas_guide_transform (GimpCanvasItem *item,
+                             gdouble        *x1,
+                             gdouble        *y1,
+                             gdouble        *x2,
+                             gdouble        *y2)
 {
   GimpCanvasGuidePrivate *private = GET_PRIVATE (item);
+  GtkWidget              *canvas  = gimp_canvas_item_get_canvas (item);
   GtkAllocation           allocation;
   gint                    x, y;
 
-  gtk_widget_get_allocation (shell->canvas, &allocation);
+  gtk_widget_get_allocation (canvas, &allocation);
 
   *x1 = 0;
   *y1 = 0;
@@ -196,12 +192,12 @@ gimp_canvas_guide_transform (GimpCanvasItem   *item,
   switch (private->orientation)
     {
     case GIMP_ORIENTATION_HORIZONTAL:
-      gimp_display_shell_transform_xy (shell, 0, private->position, &x, &y);
+      gimp_canvas_item_transform_xy (item, 0, private->position, &x, &y);
       *y1 = *y2 = y + 0.5;
       break;
 
     case GIMP_ORIENTATION_VERTICAL:
-      gimp_display_shell_transform_xy (shell, private->position, 0, &x, &y);
+      gimp_canvas_item_transform_xy (item, private->position, 0, &x, &y);
       *x1 = *x2 = x + 0.5;
       break;
 
@@ -211,14 +207,13 @@ gimp_canvas_guide_transform (GimpCanvasItem   *item,
 }
 
 static void
-gimp_canvas_guide_draw (GimpCanvasItem   *item,
-                        GimpDisplayShell *shell,
-                        cairo_t          *cr)
+gimp_canvas_guide_draw (GimpCanvasItem *item,
+                        cairo_t        *cr)
 {
   gdouble x1, y1;
   gdouble x2, y2;
 
-  gimp_canvas_guide_transform (item, shell, &x1, &y1, &x2, &y2);
+  gimp_canvas_guide_transform (item, &x1, &y1, &x2, &y2);
 
   cairo_move_to (cr, x1, y1);
   cairo_line_to (cr, x2, y2);
@@ -227,14 +222,13 @@ gimp_canvas_guide_draw (GimpCanvasItem   *item,
 }
 
 static cairo_region_t *
-gimp_canvas_guide_get_extents (GimpCanvasItem   *item,
-                               GimpDisplayShell *shell)
+gimp_canvas_guide_get_extents (GimpCanvasItem *item)
 {
   cairo_rectangle_int_t rectangle;
   gdouble               x1, y1;
   gdouble               x2, y2;
 
-  gimp_canvas_guide_transform (item, shell, &x1, &y1, &x2, &y2);
+  gimp_canvas_guide_transform (item, &x1, &y1, &x2, &y2);
 
   rectangle.x      = MIN (x1, x2) - 1.5;
   rectangle.y      = MIN (y1, y2) - 1.5;
@@ -245,22 +239,20 @@ gimp_canvas_guide_get_extents (GimpCanvasItem   *item,
 }
 
 static void
-gimp_canvas_guide_stroke (GimpCanvasItem   *item,
-                          GimpDisplayShell *shell,
-                          cairo_t          *cr)
+gimp_canvas_guide_stroke (GimpCanvasItem *item,
+                          cairo_t        *cr)
 {
   GimpCanvasGuidePrivate *private = GET_PRIVATE (item);
 
   if (private->guide_style)
     {
-      cairo_translate (cr, -shell->offset_x, -shell->offset_y);
-      gimp_display_shell_set_guide_style (shell, cr,
-                                          gimp_canvas_item_get_highlight (item));
+      gimp_canvas_set_guide_style (gimp_canvas_item_get_canvas (item), cr,
+                                   gimp_canvas_item_get_highlight (item));
       cairo_stroke (cr);
     }
   else
     {
-      GIMP_CANVAS_ITEM_CLASS (parent_class)->stroke (item, shell, cr);
+      GIMP_CANVAS_ITEM_CLASS (parent_class)->stroke (item, cr);
     }
 }
 

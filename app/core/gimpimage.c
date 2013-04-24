@@ -1290,7 +1290,6 @@ gimp_image_get_graph (GimpProjectable *projectable)
   GimpImagePrivate  *private = GIMP_IMAGE_GET_PRIVATE (image);
   GeglNode          *layers_node;
   GeglNode          *channels_node;
-  GeglNode          *blend_node;
   GeglNode          *output;
   GimpComponentMask  mask;
 
@@ -1300,23 +1299,17 @@ gimp_image_get_graph (GimpProjectable *projectable)
   private->graph = gegl_node_new ();
 
   layers_node =
-    gimp_drawable_stack_get_graph (GIMP_DRAWABLE_STACK (private->layers->container));
+    gimp_filter_stack_get_graph (GIMP_FILTER_STACK (private->layers->container));
 
   gegl_node_add_child (private->graph, layers_node);
 
   channels_node =
-    gimp_drawable_stack_get_graph (GIMP_DRAWABLE_STACK (private->channels->container));
+    gimp_filter_stack_get_graph (GIMP_FILTER_STACK (private->channels->container));
 
   gegl_node_add_child (private->graph, channels_node);
 
-  blend_node = gegl_node_new_child (private->graph,
-                                    "operation", "gegl:over",
-                                    NULL);
-
   gegl_node_connect_to (layers_node,   "output",
-                        blend_node,    "input");
-  gegl_node_connect_to (channels_node, "output",
-                        blend_node,    "aux");
+                        channels_node, "input");
 
   mask = ~gimp_image_get_visible_mask (image) & GIMP_COMPONENT_ALL;
 
@@ -1326,7 +1319,7 @@ gimp_image_get_graph (GimpProjectable *projectable)
                          "mask",      mask,
                          NULL);
 
-  gegl_node_connect_to (blend_node,            "output",
+  gegl_node_connect_to (channels_node,         "output",
                         private->visible_mask, "input");
 
   output = gegl_node_get_output_proxy (private->graph, "output");
@@ -2257,15 +2250,7 @@ gimp_image_set_component_active (GimpImage       *image,
 
   if (index != -1 && active != private->active[index])
     {
-      GimpLayer *floating_sel = gimp_image_get_floating_selection (image);
-
       private->active[index] = active ? TRUE : FALSE;
-
-      if (floating_sel)
-        gimp_drawable_update (GIMP_DRAWABLE (floating_sel),
-                              0, 0,
-                              gimp_item_get_width  (GIMP_ITEM (floating_sel)),
-                              gimp_item_get_height (GIMP_ITEM (floating_sel)));
 
       /*  If there is an active channel and we mess with the components,
        *  the active channel gets unset...

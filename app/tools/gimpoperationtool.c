@@ -55,12 +55,9 @@
 
 static void        gimp_operation_tool_finalize        (GObject           *object);
 
-static gboolean    gimp_operation_tool_initialize      (GimpTool          *tool,
-                                                        GimpDisplay       *display,
-                                                        GError           **error);
-
 static GeglNode  * gimp_operation_tool_get_operation   (GimpImageMapTool  *im_tool,
-                                                        GObject          **config);
+                                                        GObject          **config,
+                                                        gchar            **undo_desc);
 static void        gimp_operation_tool_map             (GimpImageMapTool  *im_tool);
 static void        gimp_operation_tool_dialog          (GimpImageMapTool  *im_tool);
 static void        gimp_operation_tool_reset           (GimpImageMapTool  *im_tool);
@@ -76,10 +73,6 @@ static void        gimp_operation_tool_color_picked    (GimpImageMapTool  *im_to
                                                         gpointer           identifier,
                                                         const Babl        *sample_format,
                                                         const GimpRGB     *color);
-
-static void        gimp_operation_tool_config_notify   (GObject           *object,
-                                                        GParamSpec        *pspec,
-                                                        GimpOperationTool *tool);
 
 
 G_DEFINE_TYPE (GimpOperationTool, gimp_operation_tool,
@@ -109,12 +102,9 @@ static void
 gimp_operation_tool_class_init (GimpOperationToolClass *klass)
 {
   GObjectClass          *object_class  = G_OBJECT_CLASS (klass);
-  GimpToolClass         *tool_class    = GIMP_TOOL_CLASS (klass);
   GimpImageMapToolClass *im_tool_class = GIMP_IMAGE_MAP_TOOL_CLASS (klass);
 
   object_class->finalize         = gimp_operation_tool_finalize;
-
-  tool_class->initialize         = gimp_operation_tool_initialize;
 
   im_tool_class->dialog_desc     = _("GEGL Operation");
 
@@ -129,6 +119,7 @@ gimp_operation_tool_class_init (GimpOperationToolClass *klass)
 static void
 gimp_operation_tool_init (GimpOperationTool *tool)
 {
+  GIMP_IMAGE_MAP_TOOL_GET_CLASS (tool)->settings_name = NULL; /* XXX hack */
 }
 
 static void
@@ -148,44 +139,33 @@ gimp_operation_tool_finalize (GObject *object)
       tool->config = NULL;
     }
 
-  if (tool->dialog_desc)
+  if (tool->undo_desc)
     {
-      g_free (tool->dialog_desc);
-      tool->dialog_desc = NULL;
+      g_free (tool->undo_desc);
+      tool->undo_desc = NULL;
     }
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
-static gboolean
-gimp_operation_tool_initialize (GimpTool     *tool,
-                                GimpDisplay  *display,
-                                GError      **error)
-{
-  GimpOperationTool *o_tool   = GIMP_OPERATION_TOOL (tool);
-  GimpImage         *image    = gimp_display_get_image (display);
-  GimpDrawable      *drawable = gimp_image_get_active_drawable (image);
-
-  if (! drawable)
-    return FALSE;
-
-  if (o_tool->config)
-    gimp_config_reset (GIMP_CONFIG (o_tool->config));
-
-  if (! GIMP_TOOL_CLASS (parent_class)->initialize (tool, display, error))
-    {
-      return FALSE;
-    }
-
-  gimp_image_map_tool_preview (GIMP_IMAGE_MAP_TOOL (tool));
-
-  return TRUE;
-}
-
 static GeglNode *
 gimp_operation_tool_get_operation (GimpImageMapTool  *im_tool,
-                                   GObject          **config)
+                                   GObject          **config,
+                                   gchar            **undo_desc)
 {
+  GimpOperationTool *tool = GIMP_OPERATION_TOOL (im_tool);
+
+  if (tool->config)
+    *config = g_object_ref (tool->config);
+
+  if (tool->undo_desc)
+    *undo_desc = g_strdup (tool->undo_desc);
+
+  if (tool->operation)
+    return gegl_node_new_child (NULL,
+                                "operation", tool->operation,
+                                NULL);
+
   return g_object_new (GEGL_TYPE_NODE, NULL);
 }
 
@@ -219,9 +199,9 @@ gimp_operation_tool_dialog (GimpImageMapTool *image_map_tool)
       gtk_widget_show (tool->options_table);
     }
 
-  if (tool->dialog_desc)
+  if (tool->undo_desc)
     g_object_set (GIMP_IMAGE_MAP_TOOL (tool)->dialog,
-                  "description", tool->dialog_desc,
+                  "description", tool->undo_desc,
                   NULL);
 }
 
@@ -249,6 +229,8 @@ gimp_operation_tool_get_settings_ui (GimpImageMapTool  *image_map_tool,
   GtkWidget         *widget;
   gchar             *basename;
   gchar             *filename;
+  gchar             *import_title;
+  gchar             *export_title;
 
   settings = gimp_gegl_get_config_container (type);
   if (! gimp_list_get_sort_func (GIMP_LIST (settings)))
@@ -259,17 +241,22 @@ gimp_operation_tool_get_settings_ui (GimpImageMapTool  *image_map_tool,
   filename = g_build_filename (gimp_directory (), "filters", basename, NULL);
   g_free (basename);
 
+  import_title = g_strdup_printf (_("Import '%s' Settings"), tool->undo_desc);
+  export_title = g_strdup_printf (_("Export '%s' Settings"), tool->undo_desc);
+
   widget =
     GIMP_IMAGE_MAP_TOOL_CLASS (parent_class)->get_settings_ui (image_map_tool,
                                                                settings,
                                                                filename,
-                                                               "Import foo",
-                                                               "Export foo",
+                                                               import_title,
+                                                               export_title,
                                                                "help-foo",
                                                                g_get_home_dir (),
                                                                settings_box);
 
   g_free (filename);
+  g_free (import_title);
+  g_free (export_title);
 
   return widget;
 }
@@ -287,62 +274,35 @@ gimp_operation_tool_color_picked (GimpImageMapTool  *im_tool,
                 NULL);
 }
 
-static void
-gimp_operation_tool_config_notify (GObject           *object,
-                                   GParamSpec        *pspec,
-                                   GimpOperationTool *tool)
-{
-  gimp_image_map_tool_preview (GIMP_IMAGE_MAP_TOOL (tool));
-}
-
 void
 gimp_operation_tool_set_operation (GimpOperationTool *tool,
                                    const gchar       *operation,
-                                   const gchar       *dialog_desc)
+                                   const gchar       *undo_desc)
 {
   g_return_if_fail (GIMP_IS_OPERATION_TOOL (tool));
   g_return_if_fail (operation != NULL);
 
   if (tool->operation)
-    {
-      g_free (tool->operation);
-      tool->operation = NULL;
-    }
+    g_free (tool->operation);
 
-  if (tool->config)
-    {
-      g_object_unref (tool->config);
-      tool->config = NULL;
-    }
-
-  if (GIMP_IMAGE_MAP_TOOL (tool)->config)
-    {
-      g_object_unref (GIMP_IMAGE_MAP_TOOL (tool)->config);
-      GIMP_IMAGE_MAP_TOOL (tool)->config = NULL;
-    }
+  if (tool->undo_desc)
+    g_free (tool->undo_desc);
 
   tool->operation = g_strdup (operation);
+  tool->undo_desc = g_strdup (undo_desc);
 
-  if (GIMP_IMAGE_MAP_TOOL (tool)->image_map)
-    {
-      gimp_image_map_clear (GIMP_IMAGE_MAP_TOOL (tool)->image_map);
-      g_object_unref (GIMP_IMAGE_MAP_TOOL (tool)->image_map);
-      GIMP_IMAGE_MAP_TOOL (tool)->image_map = NULL;
-    }
-
-  gegl_node_set (GIMP_IMAGE_MAP_TOOL (tool)->operation,
-                 "operation", tool->operation,
-                 NULL);
-
-  if (GIMP_TOOL (tool)->drawable)
-    gimp_image_map_tool_create_map (GIMP_IMAGE_MAP_TOOL (tool));
+  if (tool->config)
+    g_object_unref (tool->config);
 
   tool->config = gimp_gegl_get_config_proxy (tool->operation,
                                              GIMP_TYPE_IMAGE_MAP_CONFIG);
-  GIMP_IMAGE_MAP_TOOL (tool)->config = g_object_ref (tool->config);
 
-  GIMP_VIEWABLE_GET_CLASS (tool->config)->default_stock_id = GIMP_STOCK_GEGL;
-  GIMP_IMAGE_MAP_TOOL_GET_CLASS (tool)->settings_name = dialog_desc; /* XXX hack */
+  gimp_image_map_tool_get_operation (GIMP_IMAGE_MAP_TOOL (tool));
+
+  if (undo_desc)
+    GIMP_IMAGE_MAP_TOOL_GET_CLASS (tool)->settings_name = "yes"; /* XXX hack */
+  else
+    GIMP_IMAGE_MAP_TOOL_GET_CLASS (tool)->settings_name = NULL; /* XXX hack */
 
   if (tool->options_table)
     {
@@ -352,10 +312,6 @@ gimp_operation_tool_set_operation (GimpOperationTool *tool,
 
   if (tool->config)
     {
-      g_signal_connect_object (tool->config, "notify",
-                               G_CALLBACK (gimp_operation_tool_config_notify),
-                               G_OBJECT (tool), 0);
-
       tool->options_table =
         gimp_prop_table_new (G_OBJECT (tool->config),
                              G_TYPE_FROM_INSTANCE (tool->config),
@@ -371,21 +327,10 @@ gimp_operation_tool_set_operation (GimpOperationTool *tool,
         }
     }
 
-  if (tool->dialog_desc)
-    {
-      g_free (tool->dialog_desc);
-      tool->dialog_desc = NULL;
-    }
-
-  if (dialog_desc)
-    {
-      tool->dialog_desc = g_strdup (dialog_desc);
-
-      if (GIMP_IMAGE_MAP_TOOL (tool)->dialog)
-        g_object_set (GIMP_IMAGE_MAP_TOOL (tool)->dialog,
-                      "description", dialog_desc,
-                      NULL);
-    }
+  if (undo_desc && GIMP_IMAGE_MAP_TOOL (tool)->dialog)
+    g_object_set (GIMP_IMAGE_MAP_TOOL (tool)->dialog,
+                  "description", undo_desc,
+                  NULL);
 
   if (GIMP_TOOL (tool)->drawable)
     gimp_image_map_tool_preview (GIMP_IMAGE_MAP_TOOL (tool));

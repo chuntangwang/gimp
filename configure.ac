@@ -46,8 +46,8 @@ m4_define([glib_required_version], [2.32.0])
 m4_define([atk_required_version], [2.2.0])
 m4_define([gtk_required_version], [2.24.10])
 m4_define([gdk_pixbuf_required_version], [2.24.1])
-m4_define([cairo_required_version], [1.10.2])
-m4_define([cairo_pdf_required_version], [1.10.2])
+m4_define([cairo_required_version], [1.12.2])
+m4_define([cairo_pdf_required_version], [1.12.2])
 m4_define([pangocairo_required_version], [1.29.4])
 m4_define([fontconfig_required_version], [2.2.0])
 m4_define([gtkdoc_required_version], [1.0])
@@ -1026,7 +1026,7 @@ AC_SUBST(GIMP_COMMAND)
 
 # The list of MIME types that are supported by plug-ins that are compiled
 # unconditionally:
-MIME_TYPES="image/bmp;image/g3fax;image/gif;image/x-fits;image/pcx;image/x-portable-anymap;image/x-portable-bitmap;image/x-portable-graymap;image/x-portable-pixmap;image/x-psd;image/x-sgi;image/x-tga;image/x-xbitmap;image/x-xwindowdump;image/x-xcf;image/x-compressed-xcf;image/x-gimp-gbr;image/x-gimp-pat;image/x-gimp-gih"
+MIME_TYPES="image/bmp;image/g3fax;image/gif;image/x-fits;image/x-pcx;image/x-portable-anymap;image/x-portable-bitmap;image/x-portable-graymap;image/x-portable-pixmap;image/x-psd;image/x-sgi;image/x-tga;image/x-xbitmap;image/x-xwindowdump;image/x-xcf;image/x-compressed-xcf;image/x-gimp-gbr;image/x-gimp-pat;image/x-gimp-gih"
 
 
 ###################
@@ -1055,7 +1055,7 @@ fi
 
 if test "x$with_libtiff" != xno && test -z "$TIFF_LIBS"; then
   AC_MSG_ERROR([
-*** Checks for TIFF libary failed. You can build without it by passing
+*** Checks for TIFF library failed. You can build without it by passing
 *** --without-libtiff to configure but you won't be able to use TIFFs then.])
 fi
 

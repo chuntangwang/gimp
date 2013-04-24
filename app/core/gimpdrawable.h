@@ -180,10 +180,6 @@ void            gimp_drawable_set_buffer_full    (GimpDrawable       *drawable,
 GeglNode      * gimp_drawable_get_source_node    (GimpDrawable       *drawable);
 GeglNode      * gimp_drawable_get_mode_node      (GimpDrawable       *drawable);
 
-void            gimp_drawable_set_is_last_node   (GimpDrawable       *drawable,
-                                                  gboolean            last_node);
-gboolean        gimp_drawable_get_is_last_node   (GimpDrawable       *drawable);
-
 void            gimp_drawable_swap_pixels        (GimpDrawable       *drawable,
                                                   GeglBuffer         *buffer,
                                                   gint                x,
@@ -222,6 +218,8 @@ GimpLayer    * gimp_drawable_get_floating_sel    (const GimpDrawable *drawable);
 void           gimp_drawable_attach_floating_sel (GimpDrawable       *drawable,
                                                   GimpLayer          *floating_sel);
 void           gimp_drawable_detach_floating_sel (GimpDrawable       *drawable);
+GimpFilter *
+           gimp_drawable_get_floating_sel_filter (GimpDrawable       *drawable);
 
 
 #endif /* __GIMP_DRAWABLE_H__ */

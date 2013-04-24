@@ -4,7 +4,6 @@ ACLOCAL_AMFLAGS = -I m4macros ${ACLOCAL_FLAGS}
 
 SUBDIRS = \
 	m4macros	\
-	tools		\
 	cursors		\
 	themes		\
 	po		\
@@ -17,6 +16,7 @@ SUBDIRS = \
 	desktop		\
 	menus		\
 	libgimpbase	\
+	tools		\
 	libgimpcolor	\
 	libgimpmath	\
 	libgimpconfig	\

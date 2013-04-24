@@ -70,14 +70,13 @@ struct _GimpDisplayShell
   gdouble            scale_x;          /*  horizontal scale factor            */
   gdouble            scale_y;          /*  vertical scale factor              */
 
+  gdouble            rotate_angle;
+  cairo_matrix_t    *rotate_transform;
+  cairo_matrix_t    *rotate_untransform;
+
   gdouble            monitor_xres;
   gdouble            monitor_yres;
   gboolean           dot_for_dot;      /*  ignore monitor resolution          */
-
-  gint               x_src_dec;        /*  increments for the bresenham style */
-  gint               y_src_dec;        /*  image --> display transformation   */
-  gint               x_dest_inc;
-  gint               y_dest_inc;
 
   GimpZoomModel     *zoom;
 
@@ -114,11 +113,12 @@ struct _GimpDisplayShell
 
   GtkWidget         *statusbar;        /*  statusbar                          */
 
-  cairo_surface_t   *render_surface;   /*  buffer for rendering the image     */
+  GimpDisplayXfer   *xfer;             /*  managers image buffer transfers    */
   cairo_surface_t   *mask_surface;     /*  buffer for rendering the mask      */
   cairo_pattern_t   *checkerboard;     /*  checkerboard pattern               */
 
   GimpCanvasItem    *canvas_item;      /*  items drawn on the canvas          */
+  GimpCanvasItem    *unrotated_item;   /*  unrotated items for e.g. cursor    */
   GimpCanvasItem    *passe_partout;    /*  item for the highlight             */
   GimpCanvasItem    *preview_items;    /*  item for previews                  */
   GimpCanvasItem    *vectors;          /*  item proxy of vectors              */
@@ -150,6 +150,7 @@ struct _GimpDisplayShell
 
   GtkWidget         *close_dialog;     /*  close dialog                       */
   GtkWidget         *scale_dialog;     /*  scale (zoom) dialog                */
+  GtkWidget         *rotate_dialog;    /*  rotate dialog                      */
   GtkWidget         *nav_popup;        /*  navigation popup                   */
   GtkWidget         *grid_dialog;      /*  grid configuration dialog          */
 
@@ -179,8 +180,10 @@ struct _GimpDisplayShell
   const gchar       *space_shaded_tool;
 
   gboolean           scrolling;
-  gint               scroll_start_x;
-  gint               scroll_start_y;
+  gint               scroll_last_x;
+  gint               scroll_last_y;
+  gboolean           rotating;
+  gdouble            rotate_drag_angle;
   gpointer           scroll_info;
 
   GimpDrawable      *mask;
@@ -197,6 +200,7 @@ struct _GimpDisplayShellClass
 
   void (* scaled)    (GimpDisplayShell *shell);
   void (* scrolled)  (GimpDisplayShell *shell);
+  void (* rotated)   (GimpDisplayShell *shell);
   void (* reconnect) (GimpDisplayShell *shell);
 };
 
@@ -240,6 +244,7 @@ void              gimp_display_shell_scale_changed (GimpDisplayShell   *shell);
 
 void              gimp_display_shell_scaled        (GimpDisplayShell   *shell);
 void              gimp_display_shell_scrolled      (GimpDisplayShell   *shell);
+void              gimp_display_shell_rotated       (GimpDisplayShell   *shell);
 
 void              gimp_display_shell_set_unit      (GimpDisplayShell   *shell,
                                                     GimpUnit            unit);

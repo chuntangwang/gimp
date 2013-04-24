@@ -269,6 +269,15 @@
         <separator />
         <menuitem action="view-zoom-other" />
       </menu>
+      <menu action="view-rotate-menu" name="Rotate">
+        <menuitem action="view-rotate-reset" />
+        <separator />
+        <menuitem action="view-rotate-90" />
+        <menuitem action="view-rotate-270" />
+        <menuitem action="view-rotate-180" />
+        <separator />
+        <menuitem action="view-rotate-other" />
+      </menu>
       <separator />
       <menuitem action="view-shrink-wrap" />
       <menuitem action="view-fullscreen" />
@@ -518,6 +527,11 @@
         <menuitem action="drawable-levels-stretch" />
       </menu>
       <menu action="colors-components-menu" name="Components" />
+      <menu action="colors-desaturate-menu" name="Desaturate">
+	<menuitem action="filters-mono-mixer" />
+	<menuitem action="filters-c2g" />
+        <separator />
+      </menu>
       <menu action="colors-map-menu" name="Map">
         <placeholder name="Colormap" />
         <separator />
@@ -606,6 +620,7 @@
       <separator />
       <menu action="plug-in-blur-menu" name="Blur">
       	<menuitem action="filters-gaussian-blur" />
+      	<menuitem action="filters-dot" />
       	<menuitem action="filters-pixelize" />
       </menu>
       <menu action="plug-in-enhance-menu" name="Enhance">
@@ -624,6 +639,7 @@
         <placeholder name="Glass" />
       </menu>
       <menu action="plug-in-noise-menu" name="Noise">
+        <menuitem action="filters-noise-cie-lch" />
         <menuitem action="filters-noise-hsv" />
         <menuitem action="filters-noise-hurl" />
         <menuitem action="filters-noise-pick" />
@@ -642,7 +658,9 @@
 	<menuitem action="filters-photocopy" />
 	<menuitem action="filters-softglow" />
       </menu>
-      <menu action="plug-in-decor-menu" name="Decor" />
+      <menu action="plug-in-decor-menu" name="Decor">
+	<menuitem action="filters-vignette" />
+      </menu>
       <menu action="plug-in-map-menu" name="Map" />
       <menu action="plug-in-render-menu" name="Render">
         <menu action="plug-in-render-clouds-menu" name="Clouds" />

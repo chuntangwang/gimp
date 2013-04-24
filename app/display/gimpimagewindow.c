@@ -209,6 +209,8 @@ static void      gimp_image_window_image_notify        (GimpDisplay         *dis
                                                         GimpImageWindow     *window);
 static void      gimp_image_window_shell_scaled        (GimpDisplayShell    *shell,
                                                         GimpImageWindow     *window);
+static void      gimp_image_window_shell_rotated       (GimpDisplayShell    *shell,
+                                                        GimpImageWindow     *window);
 static void      gimp_image_window_shell_title_notify  (GimpDisplayShell    *shell,
                                                         const GParamSpec    *pspec,
                                                         GimpImageWindow     *window);
@@ -389,7 +391,7 @@ gimp_image_window_constructed (GObject *object)
                            private->dialog_factory,
                            private->menubar_manager);
   gtk_paned_pack1 (GTK_PANED (private->left_hpane), private->left_docks,
-                   FALSE, TRUE);
+                   FALSE, FALSE);
   gtk_widget_set_visible (private->left_docks, config->single_window_mode);
 
   /* Create the right pane */
@@ -419,7 +421,7 @@ gimp_image_window_constructed (GObject *object)
                            private->dialog_factory,
                            private->menubar_manager);
   gtk_paned_pack2 (GTK_PANED (private->right_hpane), private->right_docks,
-                   FALSE, TRUE);
+                   FALSE, FALSE);
   gtk_widget_set_visible (private->right_docks, config->single_window_mode);
 
   g_signal_connect_object (config, "notify::single-window-mode",
@@ -814,6 +816,7 @@ gimp_image_window_get_aux_info (GimpSessionManaged *session_managed)
   if (config->single_window_mode)
     {
       GimpSessionInfoAux *aux;
+      GtkAllocation       allocation;
       gchar               widthbuf[128];
 
       g_snprintf (widthbuf, sizeof (widthbuf), "%d",
@@ -821,8 +824,14 @@ gimp_image_window_get_aux_info (GimpSessionManaged *session_managed)
       aux = gimp_session_info_aux_new (GIMP_IMAGE_WINDOW_LEFT_DOCKS_WIDTH, widthbuf);
       aux_info = g_list_append (aux_info, aux);
 
+      gtk_widget_get_allocation (private->right_hpane, &allocation);
+
+      /* a negative number will be interpreted as the width of the second
+       * child of the pane
+       */
       g_snprintf (widthbuf, sizeof (widthbuf), "%d",
-                  gtk_paned_get_position (GTK_PANED (private->right_hpane)));
+                  gtk_paned_get_position (GTK_PANED (private->right_hpane)) -
+                  allocation.width);
       aux = gimp_session_info_aux_new (GIMP_IMAGE_WINDOW_RIGHT_DOCKS_POS, widthbuf);
       aux_info = g_list_append (aux_info, aux);
 
@@ -844,7 +853,10 @@ gimp_image_window_set_right_hpane_position (GtkPaned      *paned,
 
   g_return_if_fail (GTK_IS_PANED (paned));
 
-  gtk_paned_set_position (paned, position);
+  if (position > 0)
+    gtk_paned_set_position (paned, position);
+  else
+    gtk_paned_set_position (paned, position + allocation->width);
 
   g_signal_handlers_disconnect_by_func (paned,
                                         gimp_image_window_set_right_hpane_position,
@@ -898,7 +910,7 @@ gimp_image_window_set_aux_info (GimpSessionManaged *session_managed,
   if (right_docks_pos > 0 &&
       gtk_paned_get_position (GTK_PANED (private->right_hpane)) != right_docks_pos)
     {
-      if (wait_with_right_docks)
+      if (wait_with_right_docks || right_docks_pos < 0)
         {
           /* We must wait on a size allocation before we can set the
            * position
@@ -1025,10 +1037,10 @@ gimp_image_window_add_shell (GimpImageWindow  *window,
   private->shells = g_list_append (private->shells, shell);
 
   if (g_list_length (private->shells) > 1)
-   {
-    gimp_image_window_keep_canvas_pos (window);
-    gtk_notebook_set_show_tabs (GTK_NOTEBOOK (private->notebook), TRUE);
-   }
+    {
+      gimp_image_window_keep_canvas_pos (window);
+      gtk_notebook_set_show_tabs (GTK_NOTEBOOK (private->notebook), TRUE);
+    }
 
   tab_label = gimp_image_window_create_tab_label (window, shell);
 
@@ -1616,6 +1628,9 @@ gimp_image_window_switch_page (GtkNotebook     *notebook,
             window, shell);
   private->active_shell = shell;
 
+  gimp_window_set_primary_focus_widget (GIMP_WINDOW (window),
+                                        shell->canvas);
+
   active_display = private->active_shell->display;
 
   g_signal_connect (active_display, "notify::image",
@@ -1624,6 +1639,9 @@ gimp_image_window_switch_page (GtkNotebook     *notebook,
 
   g_signal_connect (private->active_shell, "scaled",
                     G_CALLBACK (gimp_image_window_shell_scaled),
+                    window);
+  g_signal_connect (private->active_shell, "rotated",
+                    G_CALLBACK (gimp_image_window_shell_rotated),
                     window);
   g_signal_connect (private->active_shell, "notify::title",
                     G_CALLBACK (gimp_image_window_shell_title_notify),
@@ -1682,6 +1700,9 @@ gimp_image_window_disconnect_from_active_shell (GimpImageWindow *window)
 
   g_signal_handlers_disconnect_by_func (private->active_shell,
                                         gimp_image_window_shell_scaled,
+                                        window);
+  g_signal_handlers_disconnect_by_func (private->active_shell,
+                                        gimp_image_window_shell_rotated,
                                         window);
   g_signal_handlers_disconnect_by_func (private->active_shell,
                                         gimp_image_window_shell_title_notify,
@@ -1867,6 +1888,17 @@ gimp_image_window_shell_scaled (GimpDisplayShell *shell,
   GimpImageWindowPrivate *private = GIMP_IMAGE_WINDOW_GET_PRIVATE (window);
 
   /* update the <Image>/View/Zoom menu */
+  gimp_ui_manager_update (private->menubar_manager,
+                          shell->display);
+}
+
+static void
+gimp_image_window_shell_rotated (GimpDisplayShell *shell,
+                                 GimpImageWindow  *window)
+{
+  GimpImageWindowPrivate *private = GIMP_IMAGE_WINDOW_GET_PRIVATE (window);
+
+  /* update the <Image>/View/Rotate menu */
   gimp_ui_manager_update (private->menubar_manager,
                           shell->display);
 }

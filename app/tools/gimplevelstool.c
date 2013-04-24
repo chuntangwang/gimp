@@ -74,7 +74,8 @@ static gboolean   gimp_levels_tool_initialize     (GimpTool          *tool,
                                                    GError           **error);
 
 static GeglNode * gimp_levels_tool_get_operation  (GimpImageMapTool  *im_tool,
-                                                   GObject          **config);
+                                                   GObject          **config,
+                                                   gchar            **undo_desc);
 static void       gimp_levels_tool_dialog         (GimpImageMapTool  *im_tool);
 static void       gimp_levels_tool_reset          (GimpImageMapTool  *im_tool);
 static gboolean   gimp_levels_tool_settings_import(GimpImageMapTool  *im_tool,
@@ -204,11 +205,6 @@ gimp_levels_tool_initialize (GimpTool     *tool,
   gdouble           step;
   gint              digits;
 
-  if (! drawable)
-    return FALSE;
-
-  gimp_config_reset (GIMP_CONFIG (l_tool->config));
-
   if (! GIMP_TOOL_CLASS (parent_class)->initialize (tool, display, error))
     {
       return FALSE;
@@ -282,28 +278,23 @@ gimp_levels_tool_initialize (GimpTool     *tool,
 
 static GeglNode *
 gimp_levels_tool_get_operation (GimpImageMapTool  *im_tool,
-                                GObject          **config)
+                                GObject          **config,
+                                gchar            **undo_desc)
 {
   GimpLevelsTool *tool = GIMP_LEVELS_TOOL (im_tool);
-  GeglNode       *node;
-
-  node = g_object_new (GEGL_TYPE_NODE,
-                       "operation", "gimp:levels",
-                       NULL);
 
   tool->config = g_object_new (GIMP_TYPE_LEVELS_CONFIG, NULL);
-
-  *config = G_OBJECT (tool->config);
 
   g_signal_connect_object (tool->config, "notify",
                            G_CALLBACK (gimp_levels_tool_config_notify),
                            G_OBJECT (tool), 0);
 
-  gegl_node_set (node,
-                 "config", tool->config,
-                 NULL);
+  *config = G_OBJECT (tool->config);
 
-  return node;
+  return gegl_node_new_child (NULL,
+                              "operation", "gimp:levels",
+                              "config",    tool->config,
+                              NULL);
 }
 
 
@@ -896,8 +887,6 @@ gimp_levels_tool_config_notify (GObject        *object,
                                 config->high_output[config->channel] *
                                 scale_factor);
     }
-
-  gimp_image_map_tool_preview (GIMP_IMAGE_MAP_TOOL (tool));
 }
 
 static void

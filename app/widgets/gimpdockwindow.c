@@ -291,6 +291,7 @@ gimp_dock_window_constructed (GObject *object)
 {
   GimpDockWindow *dock_window = GIMP_DOCK_WINDOW (object);
   GimpGuiConfig  *config;
+  GimpContext    *factory_context;
   GtkAccelGroup  *accel_group;
   Gimp           *gimp;
   GtkSettings    *settings;
@@ -310,6 +311,9 @@ gimp_dock_window_constructed (GObject *object)
   dock_window->p->context           = gimp_context_new (gimp, "Dock Context", NULL);
   dock_window->p->image_container   = gimp->images;
   dock_window->p->display_container = gimp->displays;
+
+  factory_context =
+    gimp_dialog_factory_get_context (dock_window->p->dialog_factory);
 
   /* Setup hints */
   gimp_window_set_hint (GTK_WINDOW (dock_window), config->dock_window_hint);
@@ -346,7 +350,7 @@ gimp_dock_window_constructed (GObject *object)
                                     GIMP_CONTEXT_DISPLAY_MASK),
                                   FALSE);
   gimp_context_set_parent (dock_window->p->context,
-                           gimp_dialog_factory_get_context (dock_window->p->dialog_factory));
+                           factory_context);
 
   /* Setup widget hierarchy */
   {
@@ -423,21 +427,21 @@ gimp_dock_window_constructed (GObject *object)
 
   if (dock_window->p->auto_follow_active)
     {
-      if (gimp_context_get_display (gimp_dialog_factory_get_context (dock_window->p->dialog_factory)))
-        gimp_context_copy_property (gimp_dialog_factory_get_context (dock_window->p->dialog_factory),
+      if (gimp_context_get_display (factory_context))
+        gimp_context_copy_property (factory_context,
                                     dock_window->p->context,
                                     GIMP_CONTEXT_PROP_DISPLAY);
       else
-        gimp_context_copy_property (gimp_dialog_factory_get_context (dock_window->p->dialog_factory),
+        gimp_context_copy_property (factory_context,
                                     dock_window->p->context,
                                     GIMP_CONTEXT_PROP_IMAGE);
     }
 
-  g_signal_connect_object (gimp_dialog_factory_get_context (dock_window->p->dialog_factory), "display-changed",
+  g_signal_connect_object (factory_context, "display-changed",
                            G_CALLBACK (gimp_dock_window_factory_display_changed),
                            dock_window,
                            0);
-  g_signal_connect_object (gimp_dialog_factory_get_context (dock_window->p->dialog_factory), "image-changed",
+  g_signal_connect_object (factory_context, "image-changed",
                            G_CALLBACK (gimp_dock_window_factory_image_changed),
                            dock_window,
                            0);
@@ -458,12 +462,12 @@ gimp_dock_window_constructed (GObject *object)
 
   if (dock_window->p->auto_follow_active)
     {
-      if (gimp_context_get_display (gimp_dialog_factory_get_context (dock_window->p->dialog_factory)))
-        gimp_context_copy_property (gimp_dialog_factory_get_context (dock_window->p->dialog_factory),
+      if (gimp_context_get_display (factory_context))
+        gimp_context_copy_property (factory_context,
                                     dock_window->p->context,
                                     GIMP_CONTEXT_PROP_DISPLAY);
       else
-        gimp_context_copy_property (gimp_dialog_factory_get_context (dock_window->p->dialog_factory),
+        gimp_context_copy_property (factory_context,
                                     dock_window->p->context,
                                     GIMP_CONTEXT_PROP_IMAGE);
     }
@@ -862,15 +866,6 @@ gimp_dock_window_should_add_to_recent (GimpDockWindow *dock_window)
 }
 
 static void
-gimp_dock_window_display_changed (GimpDockWindow *dock_window,
-                                  GimpObject     *display,
-                                  GimpContext    *context)
-{
-  gimp_ui_manager_update (dock_window->p->ui_manager,
-                          display);
-}
-
-static void
 gimp_dock_window_image_flush (GimpImage      *image,
                               gboolean        invalidate_preview,
                               GimpDockWindow *dock_window)
@@ -974,12 +969,39 @@ gimp_dock_window_factory_image_changed (GimpContext *context,
 }
 
 static void
+gimp_dock_window_display_changed (GimpDockWindow *dock_window,
+                                  GimpObject     *display,
+                                  GimpContext    *context)
+{
+  /*  make sure auto-follow-active works both ways  */
+  if (display && dock_window->p->auto_follow_active)
+    {
+      GimpContext *factory_context =
+        gimp_dialog_factory_get_context (dock_window->p->dialog_factory);
+
+      gimp_context_set_display (factory_context, display);
+    }
+
+  gimp_ui_manager_update (dock_window->p->ui_manager,
+                          display);
+}
+
+static void
 gimp_dock_window_image_changed (GimpDockWindow *dock_window,
                                 GimpImage      *image,
                                 GimpContext    *context)
 {
   GimpContainer *image_container   = dock_window->p->image_container;
   GimpContainer *display_container = dock_window->p->display_container;
+
+  /*  make sure auto-follow-active works both ways  */
+  if (image && dock_window->p->auto_follow_active)
+    {
+      GimpContext *factory_context =
+        gimp_dialog_factory_get_context (dock_window->p->dialog_factory);
+
+      gimp_context_set_image (factory_context, image);
+    }
 
   if (image == NULL && ! gimp_container_is_empty (image_container))
     {

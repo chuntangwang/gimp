@@ -31,10 +31,9 @@
 #include "core/gimpbezierdesc.h"
 #include "core/gimpparamspecs.h"
 
+#include "gimpcanvas-style.h"
 #include "gimpcanvaspath.h"
 #include "gimpdisplayshell.h"
-#include "gimpdisplayshell-style.h"
-#include "gimpdisplayshell-transform.h"
 
 
 enum
@@ -66,23 +65,20 @@ struct _GimpCanvasPathPrivate
 
 /*  local function prototypes  */
 
-static void             gimp_canvas_path_finalize     (GObject          *object);
-static void             gimp_canvas_path_set_property (GObject          *object,
-                                                       guint             property_id,
-                                                       const GValue     *value,
-                                                       GParamSpec       *pspec);
-static void             gimp_canvas_path_get_property (GObject          *object,
-                                                       guint             property_id,
-                                                       GValue           *value,
-                                                       GParamSpec       *pspec);
-static void             gimp_canvas_path_draw         (GimpCanvasItem   *item,
-                                                       GimpDisplayShell *shell,
-                                                       cairo_t          *cr);
-static cairo_region_t * gimp_canvas_path_get_extents  (GimpCanvasItem   *item,
-                                                       GimpDisplayShell *shell);
-static void             gimp_canvas_path_stroke       (GimpCanvasItem   *item,
-                                                       GimpDisplayShell *shell,
-                                                       cairo_t          *cr);
+static void             gimp_canvas_path_finalize     (GObject        *object);
+static void             gimp_canvas_path_set_property (GObject        *object,
+                                                       guint           property_id,
+                                                       const GValue   *value,
+                                                       GParamSpec     *pspec);
+static void             gimp_canvas_path_get_property (GObject        *object,
+                                                       guint           property_id,
+                                                       GValue         *value,
+                                                       GParamSpec     *pspec);
+static void             gimp_canvas_path_draw         (GimpCanvasItem *item,
+                                                       cairo_t        *cr);
+static cairo_region_t * gimp_canvas_path_get_extents  (GimpCanvasItem *item);
+static void             gimp_canvas_path_stroke       (GimpCanvasItem *item,
+                                                       cairo_t        *cr);
 
 
 G_DEFINE_TYPE (GimpCanvasPath, gimp_canvas_path,
@@ -223,17 +219,15 @@ gimp_canvas_path_get_property (GObject    *object,
 }
 
 static void
-gimp_canvas_path_draw (GimpCanvasItem   *item,
-                       GimpDisplayShell *shell,
-                       cairo_t          *cr)
+gimp_canvas_path_draw (GimpCanvasItem *item,
+                       cairo_t        *cr)
 {
   GimpCanvasPathPrivate *private = GET_PRIVATE (item);
 
   if (private->path)
     {
       cairo_save (cr);
-      cairo_translate (cr, -shell->offset_x, -shell->offset_y);
-      cairo_scale (cr, shell->scale_x, shell->scale_y);
+      gimp_canvas_item_transform (item, cr);
       cairo_translate (cr, private->x, private->y);
 
       cairo_append_path (cr, private->path);
@@ -247,22 +241,21 @@ gimp_canvas_path_draw (GimpCanvasItem   *item,
 }
 
 static cairo_region_t *
-gimp_canvas_path_get_extents (GimpCanvasItem   *item,
-                              GimpDisplayShell *shell)
+gimp_canvas_path_get_extents (GimpCanvasItem *item)
 {
   GimpCanvasPathPrivate *private = GET_PRIVATE (item);
+  GtkWidget             *canvas  = gimp_canvas_item_get_canvas (item);
 
-  if (private->path && gtk_widget_get_realized (shell->canvas))
+  if (private->path && gtk_widget_get_realized (canvas))
     {
       cairo_t               *cr;
       cairo_rectangle_int_t  rectangle;
       gdouble                x1, y1, x2, y2;
 
-      cr = gdk_cairo_create (gtk_widget_get_window (shell->canvas));
+      cr = gdk_cairo_create (gtk_widget_get_window (canvas));
 
       cairo_save (cr);
-      cairo_translate (cr, -shell->offset_x, -shell->offset_y);
-      cairo_scale (cr, shell->scale_x, shell->scale_y);
+      gimp_canvas_item_transform (item, cr);
       cairo_translate (cr, private->x, private->y);
 
       cairo_append_path (cr, private->path);
@@ -294,11 +287,11 @@ gimp_canvas_path_get_extents (GimpCanvasItem   *item,
 }
 
 static void
-gimp_canvas_path_stroke (GimpCanvasItem   *item,
-                         GimpDisplayShell *shell,
-                         cairo_t          *cr)
+gimp_canvas_path_stroke (GimpCanvasItem *item,
+                         cairo_t        *cr)
 {
   GimpCanvasPathPrivate *private = GET_PRIVATE (item);
+  GtkWidget             *canvas  = gimp_canvas_item_get_canvas (item);
   gboolean               active;
 
   switch (private->path_style)
@@ -306,23 +299,23 @@ gimp_canvas_path_stroke (GimpCanvasItem   *item,
     case GIMP_PATH_STYLE_VECTORS:
       active = gimp_canvas_item_get_highlight (item);
 
-      gimp_display_shell_set_vectors_bg_style (shell, cr, active);
+      gimp_canvas_set_vectors_bg_style (canvas, cr, active);
       cairo_stroke_preserve (cr);
 
-      gimp_display_shell_set_vectors_fg_style (shell, cr, active);
+      gimp_canvas_set_vectors_fg_style (canvas, cr, active);
       cairo_stroke (cr);
       break;
 
     case GIMP_PATH_STYLE_OUTLINE:
-      gimp_display_shell_set_outline_bg_style (shell, cr);
+      gimp_canvas_set_outline_bg_style (canvas, cr);
       cairo_stroke_preserve (cr);
 
-      gimp_display_shell_set_outline_fg_style (shell, cr);
+      gimp_canvas_set_outline_fg_style (canvas, cr);
       cairo_stroke (cr);
       break;
 
     case GIMP_PATH_STYLE_DEFAULT:
-      GIMP_CANVAS_ITEM_CLASS (parent_class)->stroke (item, shell, cr);
+      GIMP_CANVAS_ITEM_CLASS (parent_class)->stroke (item, cr);
       break;
     }
 }

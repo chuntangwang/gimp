@@ -48,10 +48,6 @@
 #define SLIDER_WIDTH 200
 
 
-static gboolean gimp_brightness_contrast_tool_initialize   (GimpTool              *tool,
-                                                            GimpDisplay           *display,
-                                                            GError               **error);
-
 static void   gimp_brightness_contrast_tool_button_press   (GimpTool              *tool,
                                                             const GimpCoords      *coords,
                                                             guint32                time,
@@ -72,7 +68,8 @@ static void   gimp_brightness_contrast_tool_motion         (GimpTool            
 
 static GeglNode *
               gimp_brightness_contrast_tool_get_operation  (GimpImageMapTool      *image_map_tool,
-                                                            GObject              **config);
+                                                            GObject              **config,
+                                                            gchar                **undo_desc);
 static void   gimp_brightness_contrast_tool_dialog         (GimpImageMapTool      *image_map_tool);
 
 static void   brightness_contrast_config_notify            (GObject                    *object,
@@ -116,7 +113,6 @@ gimp_brightness_contrast_tool_class_init (GimpBrightnessContrastToolClass *klass
   GimpToolClass         *tool_class    = GIMP_TOOL_CLASS (klass);
   GimpImageMapToolClass *im_tool_class = GIMP_IMAGE_MAP_TOOL_CLASS (klass);
 
-  tool_class->initialize             = gimp_brightness_contrast_tool_initialize;
   tool_class->button_press           = gimp_brightness_contrast_tool_button_press;
   tool_class->button_release         = gimp_brightness_contrast_tool_button_release;
   tool_class->motion                 = gimp_brightness_contrast_tool_motion;
@@ -135,47 +131,25 @@ gimp_brightness_contrast_tool_init (GimpBrightnessContrastTool *bc_tool)
 {
 }
 
-static gboolean
-gimp_brightness_contrast_tool_initialize (GimpTool     *tool,
-                                          GimpDisplay  *display,
-                                          GError      **error)
-{
-  GimpBrightnessContrastTool *bc_tool  = GIMP_BRIGHTNESS_CONTRAST_TOOL (tool);
-  GimpImage                  *image    = gimp_display_get_image (display);
-  GimpDrawable               *drawable = gimp_image_get_active_drawable (image);
-
-  if (! drawable)
-    return FALSE;
-
-  gimp_config_reset (GIMP_CONFIG (bc_tool->config));
-
-  return GIMP_TOOL_CLASS (parent_class)->initialize (tool, display, error);
-}
-
 static GeglNode *
 gimp_brightness_contrast_tool_get_operation (GimpImageMapTool  *im_tool,
-                                             GObject          **config)
+                                             GObject          **config,
+                                             gchar            **undo_desc)
 {
   GimpBrightnessContrastTool *bc_tool = GIMP_BRIGHTNESS_CONTRAST_TOOL (im_tool);
-  GeglNode                   *node;
-
-  node = g_object_new (GEGL_TYPE_NODE,
-                       "operation", "gimp:brightness-contrast",
-                       NULL);
 
   bc_tool->config = g_object_new (GIMP_TYPE_BRIGHTNESS_CONTRAST_CONFIG, NULL);
-
-  *config = G_OBJECT (bc_tool->config);
 
   g_signal_connect_object (bc_tool->config, "notify",
                            G_CALLBACK (brightness_contrast_config_notify),
                            G_OBJECT (bc_tool), 0);
 
-  gegl_node_set (node,
-                 "config", bc_tool->config,
-                 NULL);
+  *config = G_OBJECT (bc_tool->config);
 
-  return node;
+  return gegl_node_new_child (NULL,
+                              "operation", "gimp:brightness-contrast",
+                              "config",    bc_tool->config,
+                              NULL);
 }
 
 static void
@@ -322,8 +296,6 @@ brightness_contrast_config_notify (GObject                    *object,
       gtk_adjustment_set_value (bc_tool->contrast_data,
                                 config->contrast * 127.0);
     }
-
-  gimp_image_map_tool_preview (GIMP_IMAGE_MAP_TOOL (bc_tool));
 }
 
 static void

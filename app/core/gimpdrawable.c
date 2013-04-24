@@ -27,19 +27,21 @@
 
 #include "core-types.h"
 
+#include "gegl/gimpapplicator.h"
 #include "gegl/gimp-babl.h"
 #include "gegl/gimp-gegl-apply-operation.h"
-#include "gegl/gimp-gegl-nodes.h"
 #include "gegl/gimp-gegl-utils.h"
 
 #include "gimp-utils.h"
 #include "gimpchannel.h"
 #include "gimpcontext.h"
 #include "gimpdrawable-combine.h"
+#include "gimpdrawable-filter.h"
 #include "gimpdrawable-preview.h"
 #include "gimpdrawable-private.h"
 #include "gimpdrawable-shadow.h"
 #include "gimpdrawable-transform.h"
+#include "gimpfilterstack.h"
 #include "gimpimage.h"
 #include "gimpimage-colormap.h"
 #include "gimpimage-undo-push.h"
@@ -63,8 +65,7 @@ enum
 
 enum
 {
-  PROP_0,
-  PROP_IS_LAST_NODE
+  PROP_0
 };
 
 
@@ -89,6 +90,8 @@ static gint64     gimp_drawable_get_memsize        (GimpObject        *object,
 static gboolean   gimp_drawable_get_size           (GimpViewable      *viewable,
                                                     gint              *width,
                                                     gint              *height);
+
+static GeglNode * gimp_drawable_get_node           (GimpFilter        *filter);
 
 static void       gimp_drawable_removed            (GimpItem          *item);
 static void       gimp_drawable_visibility_changed (GimpItem          *item);
@@ -158,7 +161,6 @@ static void       gimp_drawable_real_set_buffer    (GimpDrawable      *drawable,
                                                     GeglBuffer        *buffer,
                                                     gint               offset_x,
                                                     gint               offset_y);
-static GeglNode * gimp_drawable_get_node           (GimpItem          *item);
 
 static void       gimp_drawable_real_push_undo     (GimpDrawable      *drawable,
                                                     const gchar       *undo_desc,
@@ -172,10 +174,15 @@ static void       gimp_drawable_real_swap_pixels   (GimpDrawable      *drawable,
                                                     gint               x,
                                                     gint               y);
 
-static void       gimp_drawable_sync_source_node   (GimpDrawable      *drawable,
+static void       gimp_drawable_sync_fs_filter     (GimpDrawable      *drawable,
                                                     gboolean           detach_fs);
 static void       gimp_drawable_fs_notify          (GimpLayer         *fs,
                                                     const GParamSpec  *pspec,
+                                                    GimpDrawable      *drawable);
+static void       gimp_drawable_fs_affect_changed  (GimpImage         *image,
+                                                    GimpChannelType    channel,
+                                                    GimpDrawable      *drawable);
+static void       gimp_drawable_fs_mask_changed    (GimpImage         *image,
                                                     GimpDrawable      *drawable);
 static void       gimp_drawable_fs_update          (GimpLayer         *fs,
                                                     gint               x,
@@ -200,6 +207,7 @@ gimp_drawable_class_init (GimpDrawableClass *klass)
   GObjectClass      *object_class      = G_OBJECT_CLASS (klass);
   GimpObjectClass   *gimp_object_class = GIMP_OBJECT_CLASS (klass);
   GimpViewableClass *viewable_class    = GIMP_VIEWABLE_CLASS (klass);
+  GimpFilterClass   *filter_class      = GIMP_FILTER_CLASS (klass);
   GimpItemClass     *item_class        = GIMP_ITEM_CLASS (klass);
 
   gimp_drawable_signals[UPDATE] =
@@ -234,6 +242,8 @@ gimp_drawable_class_init (GimpDrawableClass *klass)
   viewable_class->get_size           = gimp_drawable_get_size;
   viewable_class->get_new_preview    = gimp_drawable_get_new_preview;
 
+  filter_class->get_node             = gimp_drawable_get_node;
+
   item_class->removed                = gimp_drawable_removed;
   item_class->visibility_changed     = gimp_drawable_visibility_changed;
   item_class->duplicate              = gimp_drawable_duplicate;
@@ -242,7 +252,6 @@ gimp_drawable_class_init (GimpDrawableClass *klass)
   item_class->flip                   = gimp_drawable_flip;
   item_class->rotate                 = gimp_drawable_rotate;
   item_class->transform              = gimp_drawable_transform;
-  item_class->get_node               = gimp_drawable_get_node;
 
   klass->update                      = gimp_drawable_real_update;
   klass->alpha_changed               = NULL;
@@ -258,12 +267,6 @@ gimp_drawable_class_init (GimpDrawableClass *klass)
   klass->push_undo                   = gimp_drawable_real_push_undo;
   klass->swap_pixels                 = gimp_drawable_real_swap_pixels;
 
-  g_object_class_install_property (object_class, PROP_IS_LAST_NODE,
-                                   g_param_spec_boolean ("is-last-node",
-                                                         NULL, NULL,
-                                                         FALSE,
-                                                         GIMP_PARAM_READWRITE));
-
   g_type_class_add_private (klass, sizeof (GimpDrawablePrivate));
 }
 
@@ -273,6 +276,8 @@ gimp_drawable_init (GimpDrawable *drawable)
   drawable->private = G_TYPE_INSTANCE_GET_PRIVATE (drawable,
                                                    GIMP_TYPE_DRAWABLE,
                                                    GimpDrawablePrivate);
+
+  drawable->private->filter_stack = gimp_filter_stack_new (GIMP_TYPE_FILTER);
 }
 
 /* sorry for the evil casts */
@@ -317,6 +322,12 @@ gimp_drawable_finalize (GObject *object)
       drawable->private->source_node = NULL;
     }
 
+  if (drawable->private->filter_stack)
+    {
+      g_object_unref (drawable->private->filter_stack);
+      drawable->private->filter_stack = NULL;
+    }
+
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
@@ -326,14 +337,8 @@ gimp_drawable_set_property (GObject      *object,
                             const GValue *value,
                             GParamSpec   *pspec)
 {
-  GimpDrawable *drawable = GIMP_DRAWABLE (object);
-
   switch (property_id)
     {
-    case PROP_IS_LAST_NODE:
-      drawable->private->is_last_node = g_value_get_boolean (value);
-      break;
-
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -346,14 +351,8 @@ gimp_drawable_get_property (GObject    *object,
                             GValue     *value,
                             GParamSpec *pspec)
 {
-  GimpDrawable *drawable = GIMP_DRAWABLE (object);
-
   switch (property_id)
     {
-    case PROP_IS_LAST_NODE:
-      g_value_set_boolean (value, drawable->private->is_last_node);
-      break;
-
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -387,6 +386,42 @@ gimp_drawable_get_size (GimpViewable *viewable,
   return TRUE;
 }
 
+static GeglNode *
+gimp_drawable_get_node (GimpFilter *filter)
+{
+  GimpDrawable *drawable = GIMP_DRAWABLE (filter);
+  GeglNode     *node;
+  GeglNode     *input;
+  GeglNode     *output;
+
+  node = GIMP_FILTER_CLASS (parent_class)->get_node (filter);
+
+  g_warn_if_fail (drawable->private->mode_node == NULL);
+
+  drawable->private->mode_node =
+    gegl_node_new_child (node,
+                         "operation", "gimp:normal-mode",
+                         NULL);
+
+  input  = gegl_node_get_input_proxy  (node, "input");
+  output = gegl_node_get_output_proxy (node, "output");
+
+  if (gimp_item_get_visible (GIMP_ITEM (drawable)))
+    {
+      gegl_node_connect_to (input,                        "output",
+                            drawable->private->mode_node, "input");
+      gegl_node_connect_to (drawable->private->mode_node, "output",
+                            output,                       "input");
+    }
+  else
+    {
+      gegl_node_connect_to (input,  "output",
+                            output, "input");
+    }
+
+  return node;
+}
+
 static void
 gimp_drawable_removed (GimpItem *item)
 {
@@ -404,10 +439,10 @@ gimp_drawable_visibility_changed (GimpItem *item)
   GimpDrawable *drawable = GIMP_DRAWABLE (item);
   GeglNode     *node;
 
-  /*  don't use gimp_item_get_node() because that would create
+  /*  don't use gimp_filter_get_node() because that would create
    *  the node.
    */
-  node = gimp_item_peek_node (item);
+  node = gimp_filter_peek_node (GIMP_FILTER (item));
 
   if (node)
     {
@@ -810,42 +845,6 @@ gimp_drawable_real_set_buffer (GimpDrawable *drawable,
                    NULL);
 }
 
-static GeglNode *
-gimp_drawable_get_node (GimpItem *item)
-{
-  GimpDrawable *drawable = GIMP_DRAWABLE (item);
-  GeglNode     *node;
-  GeglNode     *input;
-  GeglNode     *output;
-
-  node = GIMP_ITEM_CLASS (parent_class)->get_node (item);
-
-  g_warn_if_fail (drawable->private->mode_node == NULL);
-
-  drawable->private->mode_node =
-    gegl_node_new_child (node,
-                         "operation", "gimp:normal-mode",
-                         NULL);
-
-  input  = gegl_node_get_input_proxy  (node, "input");
-  output = gegl_node_get_output_proxy (node, "output");
-
-  if (gimp_item_get_visible (GIMP_ITEM (drawable)))
-    {
-      gegl_node_connect_to (input,                        "output",
-                            drawable->private->mode_node, "input");
-      gegl_node_connect_to (drawable->private->mode_node, "output",
-                            output,                       "input");
-    }
-  else
-    {
-      gegl_node_connect_to (input,  "output",
-                            output, "input");
-    }
-
-  return node;
-}
-
 static void
 gimp_drawable_real_push_undo (GimpDrawable *drawable,
                               const gchar  *undo_desc,
@@ -904,25 +903,33 @@ gimp_drawable_real_swap_pixels (GimpDrawable *drawable,
 }
 
 static void
-gimp_drawable_sync_source_node (GimpDrawable *drawable,
-                                gboolean      detach_fs)
+gimp_drawable_sync_fs_filter (GimpDrawable *drawable,
+                              gboolean      detach_fs)
 {
-  GimpLayer *fs = gimp_drawable_get_floating_sel (drawable);
-  GeglNode  *output;
+  GimpDrawablePrivate *private = drawable->private;
+  GimpImage           *image   = gimp_item_get_image (GIMP_ITEM (drawable));
+  GimpLayer           *fs      = gimp_drawable_get_floating_sel (drawable);
 
-  if (! drawable->private->source_node)
+  if (! private->source_node)
     return;
-
-  output = gegl_node_get_output_proxy (drawable->private->source_node, "output");
 
   if (fs && ! detach_fs)
     {
-      gint off_x, off_y;
-      gint fs_off_x, fs_off_y;
+      GimpImage   *image = gimp_item_get_image (GIMP_ITEM (drawable));
+      GimpChannel *mask  = gimp_image_get_mask (image);
+      gint         off_x, off_y;
+      gint         fs_off_x, fs_off_y;
 
-      if (! drawable->private->fs_crop_node)
+      if (! private->fs_filter)
         {
+          GeglNode *node;
           GeglNode *fs_source;
+
+          private->fs_filter = gimp_filter_new ("Floating Selection");
+          gimp_viewable_set_stock_id (GIMP_VIEWABLE (private->fs_filter),
+                                      "gimp-floating-selection");
+
+          node = gimp_filter_get_node (private->fs_filter);
 
           fs_source = gimp_drawable_get_source_node (GIMP_DRAWABLE (fs));
 
@@ -930,109 +937,112 @@ gimp_drawable_sync_source_node (GimpDrawable *drawable,
           if (fs->layer_offset_node)
             {
               gegl_node_disconnect (fs->layer_offset_node, "input");
-              gegl_node_remove_child (gimp_item_get_node (GIMP_ITEM (fs)),
+              gegl_node_remove_child (gimp_filter_get_node (GIMP_FILTER (fs)),
                                       fs_source);
             }
 
-          gegl_node_add_child (drawable->private->source_node, fs_source);
+          gegl_node_add_child (node, fs_source);
 
-          drawable->private->fs_crop_node =
-            gegl_node_new_child (drawable->private->source_node,
+          private->fs_applicator = gimp_applicator_new (node);
+
+          private->fs_crop_node =
+            gegl_node_new_child (node,
                                  "operation", "gegl:crop",
                                  NULL);
 
-          gegl_node_connect_to (fs_source,                       "output",
-                                drawable->private->fs_crop_node, "input");
+          gegl_node_connect_to (fs_source,             "output",
+                                private->fs_crop_node, "input");
+          gegl_node_connect_to (private->fs_crop_node, "output",
+                                node,                  "aux");
 
-          drawable->private->fs_offset_node =
-            gegl_node_new_child (drawable->private->source_node,
-                                 "operation", "gegl:translate",
-                                 NULL);
-
-          gegl_node_connect_to (drawable->private->fs_crop_node,   "output",
-                                drawable->private->fs_offset_node, "input");
-
-          drawable->private->fs_mode_node =
-            gegl_node_new_child (drawable->private->source_node,
-                                 "operation", "gimp:normal-mode",
-                                 NULL);
-
-          gegl_node_connect_to (drawable->private->buffer_source_node, "output",
-                                drawable->private->fs_mode_node,       "input");
-          gegl_node_connect_to (drawable->private->fs_offset_node,     "output",
-                                drawable->private->fs_mode_node,       "aux");
-
-          gegl_node_connect_to (drawable->private->fs_mode_node, "output",
-                                output,                          "input");
+          gimp_drawable_add_filter (drawable, private->fs_filter);
 
           g_signal_connect (fs, "notify",
                             G_CALLBACK (gimp_drawable_fs_notify),
+                            drawable);
+          g_signal_connect (image, "component-active-changed",
+                            G_CALLBACK (gimp_drawable_fs_affect_changed),
+                            drawable);
+          g_signal_connect (image, "mask-changed",
+                            G_CALLBACK (gimp_drawable_fs_mask_changed),
                             drawable);
         }
 
       gimp_item_get_offset (GIMP_ITEM (drawable), &off_x, &off_y);
       gimp_item_get_offset (GIMP_ITEM (fs), &fs_off_x, &fs_off_y);
 
-      gegl_node_set (drawable->private->fs_crop_node,
+      gegl_node_set (private->fs_crop_node,
                      "x",      (gdouble) (off_x - fs_off_x),
                      "y",      (gdouble) (off_y - fs_off_y),
                      "width",  (gdouble) gimp_item_get_width  (GIMP_ITEM (drawable)),
                      "height", (gdouble) gimp_item_get_height (GIMP_ITEM (drawable)),
                      NULL);
 
-      gegl_node_set (drawable->private->fs_offset_node,
-                     "x", (gdouble) (fs_off_x - off_x),
-                     "y", (gdouble) (fs_off_y - off_y),
-                     NULL);
+      gimp_applicator_set_apply_offset (private->fs_applicator,
+                                        fs_off_x - off_x,
+                                        fs_off_y - off_y);
 
-      gimp_gegl_mode_node_set (drawable->private->fs_mode_node,
-                               gimp_layer_get_mode (fs),
-                               gimp_layer_get_opacity (fs),
-                               FALSE);
+      if (gimp_channel_is_empty (mask))
+        {
+          gimp_applicator_set_mask_buffer (private->fs_applicator, NULL);
+        }
+      else
+        {
+          GeglBuffer *buffer = gimp_drawable_get_buffer (GIMP_DRAWABLE (mask));
+
+          gimp_applicator_set_mask_buffer (private->fs_applicator, buffer);
+          gimp_applicator_set_mask_offset (private->fs_applicator,
+                                           -off_x, -off_y);
+        }
+
+      gimp_applicator_set_mode (private->fs_applicator,
+                                gimp_layer_get_opacity (fs),
+                                gimp_layer_get_mode (fs));
+      gimp_applicator_set_affect (private->fs_applicator,
+                                  gimp_drawable_get_active_mask (drawable));
     }
   else
     {
-      if (drawable->private->fs_crop_node)
+      if (private->fs_filter)
         {
+          GeglNode *node;
           GeglNode *fs_source;
 
-          gegl_node_disconnect (drawable->private->fs_crop_node, "input");
-          gegl_node_disconnect (drawable->private->fs_offset_node, "input");
-          gegl_node_disconnect (drawable->private->fs_mode_node, "input");
-          gegl_node_disconnect (drawable->private->fs_mode_node, "aux");
+          g_signal_handlers_disconnect_by_func (fs,
+                                                gimp_drawable_fs_notify,
+                                                drawable);
+          g_signal_handlers_disconnect_by_func (image,
+                                                gimp_drawable_fs_affect_changed,
+                                                drawable);
+          g_signal_handlers_disconnect_by_func (image,
+                                                gimp_drawable_fs_mask_changed,
+                                                drawable);
+
+          gimp_drawable_remove_filter (drawable, private->fs_filter);
+
+          node = gimp_filter_get_node (private->fs_filter);
 
           fs_source = gimp_drawable_get_source_node (GIMP_DRAWABLE (fs));
-          gegl_node_remove_child (drawable->private->source_node,
-                                  fs_source);
+
+          gegl_node_remove_child (node, fs_source);
 
           /* plug the fs' source node back into its graph */
           if (fs->layer_offset_node)
             {
-              gegl_node_add_child (gimp_item_get_node (GIMP_ITEM (fs)),
+              gegl_node_add_child (gimp_filter_get_node (GIMP_FILTER (fs)),
                                    fs_source);
               gegl_node_connect_to (fs_source,             "output",
                                     fs->layer_offset_node, "input");
             }
 
-          gegl_node_remove_child (drawable->private->source_node,
-                                  drawable->private->fs_crop_node);
-          drawable->private->fs_crop_node = NULL;
+          g_object_unref (private->fs_filter);
+          private->fs_filter = NULL;
 
-          gegl_node_remove_child (drawable->private->source_node,
-                                  drawable->private->fs_offset_node);
-          drawable->private->fs_offset_node = NULL;
+          g_object_unref (private->fs_applicator);
+          private->fs_applicator = NULL;
 
-          gegl_node_remove_child (drawable->private->source_node,
-                                  drawable->private->fs_mode_node);
-          drawable->private->fs_mode_node = NULL;
-
-          g_signal_handlers_disconnect_by_func (fs,
-                                                gimp_drawable_fs_notify,
-                                                drawable);
+          private->fs_crop_node = NULL;
         }
-
-      gegl_node_connect_to (drawable->private->buffer_source_node, "output",
-                            output,                                "input");
     }
 }
 
@@ -1047,8 +1057,37 @@ gimp_drawable_fs_notify (GimpLayer        *fs,
       ! strcmp (pspec->name, "mode")     ||
       ! strcmp (pspec->name, "opacity"))
     {
-      gimp_drawable_sync_source_node (drawable, FALSE);
+      gimp_drawable_sync_fs_filter (drawable, FALSE);
     }
+}
+
+static void
+gimp_drawable_fs_affect_changed (GimpImage       *image,
+                                 GimpChannelType  channel,
+                                 GimpDrawable    *drawable)
+{
+  GimpLayer *fs = gimp_drawable_get_floating_sel (drawable);
+
+  gimp_drawable_sync_fs_filter (drawable, FALSE);
+
+  gimp_drawable_update (GIMP_DRAWABLE (fs),
+                        0, 0,
+                        gimp_item_get_width  (GIMP_ITEM (fs)),
+                        gimp_item_get_height (GIMP_ITEM (fs)));
+}
+
+static void
+gimp_drawable_fs_mask_changed (GimpImage       *image,
+                               GimpDrawable    *drawable)
+{
+  GimpLayer *fs = gimp_drawable_get_floating_sel (drawable);
+
+  gimp_drawable_sync_fs_filter (drawable, FALSE);
+
+  gimp_drawable_update (GIMP_DRAWABLE (fs),
+                        0, 0,
+                        gimp_item_get_width  (GIMP_ITEM (fs)),
+                        gimp_item_get_height (GIMP_ITEM (fs)));
 }
 
 static void
@@ -1351,6 +1390,9 @@ gimp_drawable_set_buffer_full (GimpDrawable *drawable,
 GeglNode *
 gimp_drawable_get_source_node (GimpDrawable *drawable)
 {
+  GeglNode *filter;
+  GeglNode *output;
+
   g_return_val_if_fail (GIMP_IS_DRAWABLE (drawable), NULL);
 
   if (drawable->private->source_node)
@@ -1364,7 +1406,19 @@ gimp_drawable_get_source_node (GimpDrawable *drawable)
                          "buffer",    gimp_drawable_get_buffer (drawable),
                          NULL);
 
-  gimp_drawable_sync_source_node (drawable, FALSE);
+  filter = gimp_filter_stack_get_graph (GIMP_FILTER_STACK (drawable->private->filter_stack));
+
+  gegl_node_add_child (drawable->private->source_node, filter);
+
+  gegl_node_connect_to (drawable->private->buffer_source_node, "output",
+                        filter,                                "input");
+
+  output = gegl_node_get_output_proxy (drawable->private->source_node, "output");
+
+  gegl_node_connect_to (filter, "output",
+                        output, "input");
+
+  gimp_drawable_sync_fs_filter (drawable, FALSE);
 
   return drawable->private->source_node;
 }
@@ -1375,31 +1429,9 @@ gimp_drawable_get_mode_node (GimpDrawable *drawable)
   g_return_val_if_fail (GIMP_IS_DRAWABLE (drawable), NULL);
 
   if (! drawable->private->mode_node)
-    gimp_item_get_node (GIMP_ITEM (drawable));
+    gimp_filter_get_node (GIMP_FILTER (drawable));
 
   return drawable->private->mode_node;
-}
-
-void
-gimp_drawable_set_is_last_node (GimpDrawable *drawable,
-                                gboolean      last_node)
-{
-  g_return_if_fail (GIMP_IS_DRAWABLE (drawable));
-
-  if (last_node != drawable->private->is_last_node)
-    {
-      g_object_set (drawable,
-                    "is-last-node", last_node ? TRUE : FALSE,
-                    NULL);
-    }
-}
-
-gboolean
-gimp_drawable_get_is_last_node (GimpDrawable *drawable)
-{
-  g_return_val_if_fail (GIMP_IS_DRAWABLE (drawable), FALSE);
-
-  return drawable->private->is_last_node;
 }
 
 void
@@ -1641,35 +1673,35 @@ gimp_drawable_get_floating_sel (const GimpDrawable *drawable)
 
 void
 gimp_drawable_attach_floating_sel (GimpDrawable *drawable,
-                                   GimpLayer    *floating_sel)
+                                   GimpLayer    *fs)
 {
   GimpImage *image;
 
   g_return_if_fail (GIMP_IS_DRAWABLE (drawable));
   g_return_if_fail (gimp_item_is_attached (GIMP_ITEM (drawable)));
   g_return_if_fail (gimp_drawable_get_floating_sel (drawable) == NULL);
-  g_return_if_fail (GIMP_IS_LAYER (floating_sel));
+  g_return_if_fail (GIMP_IS_LAYER (fs));
 
   GIMP_LOG (FLOATING_SELECTION, "%s", G_STRFUNC);
 
   image = gimp_item_get_image (GIMP_ITEM (drawable));
 
-  drawable->private->floating_selection = floating_sel;
-  gimp_image_set_floating_selection (image, floating_sel);
+  drawable->private->floating_selection = fs;
+  gimp_image_set_floating_selection (image, fs);
 
   /*  clear the selection  */
-  gimp_drawable_invalidate_boundary (GIMP_DRAWABLE (floating_sel));
+  gimp_drawable_invalidate_boundary (GIMP_DRAWABLE (fs));
 
-  gimp_drawable_sync_source_node (drawable, FALSE);
+  gimp_drawable_sync_fs_filter (drawable, FALSE);
 
-  g_signal_connect (floating_sel, "update",
+  g_signal_connect (fs, "update",
                     G_CALLBACK (gimp_drawable_fs_update),
                     drawable);
 
-  gimp_drawable_fs_update (floating_sel,
+  gimp_drawable_fs_update (fs,
                            0, 0,
-                           gimp_item_get_width  (GIMP_ITEM (floating_sel)),
-                           gimp_item_get_height (GIMP_ITEM (floating_sel)),
+                           gimp_item_get_width  (GIMP_ITEM (fs)),
+                           gimp_item_get_height (GIMP_ITEM (fs)),
                            drawable);
 }
 
@@ -1677,31 +1709,40 @@ void
 gimp_drawable_detach_floating_sel (GimpDrawable *drawable)
 {
   GimpImage *image;
-  GimpLayer *floating_sel;
+  GimpLayer *fs;
 
   g_return_if_fail (GIMP_IS_DRAWABLE (drawable));
   g_return_if_fail (gimp_drawable_get_floating_sel (drawable) != NULL);
 
   GIMP_LOG (FLOATING_SELECTION, "%s", G_STRFUNC);
 
-  image        = gimp_item_get_image (GIMP_ITEM (drawable));
-  floating_sel = drawable->private->floating_selection;
+  image = gimp_item_get_image (GIMP_ITEM (drawable));
+  fs    = drawable->private->floating_selection;
 
-  gimp_drawable_sync_source_node (drawable, TRUE);
+  gimp_drawable_sync_fs_filter (drawable, TRUE);
 
-  g_signal_handlers_disconnect_by_func (floating_sel,
+  g_signal_handlers_disconnect_by_func (fs,
                                         gimp_drawable_fs_update,
                                         drawable);
 
-  gimp_drawable_fs_update (floating_sel,
+  gimp_drawable_fs_update (fs,
                            0, 0,
-                           gimp_item_get_width  (GIMP_ITEM (floating_sel)),
-                           gimp_item_get_height (GIMP_ITEM (floating_sel)),
+                           gimp_item_get_width  (GIMP_ITEM (fs)),
+                           gimp_item_get_height (GIMP_ITEM (fs)),
                            drawable);
 
   /*  clear the selection  */
-  gimp_drawable_invalidate_boundary (GIMP_DRAWABLE (floating_sel));
+  gimp_drawable_invalidate_boundary (GIMP_DRAWABLE (fs));
 
   gimp_image_set_floating_selection (image, NULL);
   drawable->private->floating_selection = NULL;
+}
+
+GimpFilter *
+gimp_drawable_get_floating_sel_filter (GimpDrawable *drawable)
+{
+  g_return_val_if_fail (GIMP_IS_DRAWABLE (drawable), NULL);
+  g_return_val_if_fail (gimp_drawable_get_floating_sel (drawable) != NULL, NULL);
+
+  return drawable->private->fs_filter;
 }

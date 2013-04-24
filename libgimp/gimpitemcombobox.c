@@ -537,6 +537,25 @@ gimp_item_combo_box_drag_data_received (GtkWidget        *widget,
   g_free (str);
 }
 
+static gboolean
+gimp_item_combo_box_remove_items (GtkTreeModel *model,
+                                  GtkTreePath  *path,
+                                  GtkTreeIter  *iter,
+                                  gpointer      data)
+{
+  gint    item_ID;
+  GList **remove = data;
+
+  gtk_tree_model_get (model, iter,
+                      GIMP_INT_STORE_VALUE, &item_ID,
+                      -1);
+
+  if (item_ID > 0)
+    *remove = g_list_prepend (*remove, g_memdup (iter, sizeof (GtkTreeIter)));
+
+  return FALSE;
+}
+
 static void
 gimp_item_combo_box_changed (GimpIntComboBox *combo_box)
 {
@@ -544,15 +563,25 @@ gimp_item_combo_box_changed (GimpIntComboBox *combo_box)
 
   if (gimp_int_combo_box_get_active (combo_box, &item_ID))
     {
-      if (! gimp_item_is_valid (item_ID))
+      if (item_ID > 0 && ! gimp_item_is_valid (item_ID))
         {
           GtkTreeModel *model;
+          GList        *remove = NULL;
+          GList        *list;
 
           model = gtk_combo_box_get_model (GTK_COMBO_BOX (combo_box));
 
           g_signal_stop_emission_by_name (combo_box, "changed");
 
-          gtk_list_store_clear (GTK_LIST_STORE (model));
+          gtk_tree_model_foreach (model,
+                                  gimp_item_combo_box_remove_items,
+                                  &remove);
+
+          for (list = remove; list; list = g_list_next (list))
+            gtk_list_store_remove (GTK_LIST_STORE (model), list->data);
+
+          g_list_free_full (remove, (GDestroyNotify) g_free);
+
           gimp_item_combo_box_populate (combo_box);
         }
     }

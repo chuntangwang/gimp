@@ -357,6 +357,7 @@ run (const gchar      *name,
   gint                    i;
 
   INIT_I18N ();
+  gegl_init (NULL, NULL);
 
   /* Setting mandatory output values */
   *nreturn_vals = 1;
@@ -406,7 +407,7 @@ run (const gchar      *name,
 
   if (cairo_surface_status (pdf_file) != CAIRO_STATUS_SUCCESS)
     {
-      g_message (_("An error occured while creating the PDF file:\n"
+      g_message (_("An error occurred while creating the PDF file:\n"
                    "%s\n"
                    "Make sure you entered a valid filename and that the "
                    "selected location isn't read only!"),
@@ -583,7 +584,7 @@ run (const gchar      *name,
 }
 
 /******************************************************/
-/* Begining of parameter handling functions           */
+/* Beginning of parameter handling functions          */
 /******************************************************/
 
 /* A function that takes care of loading the basic parameters
@@ -732,7 +733,7 @@ validate_image_list (void)
 
 
 /******************************************************/
-/* Begining of GUI functions                          */
+/* Beginning of GUI functions                         */
 /******************************************************/
 
 /* The main GUI function for saving single-paged PDFs */
@@ -1109,8 +1110,6 @@ del_image_call (GtkWidget *widget,
           gtk_tree_row_reference_free (items[i]);
           multi_page.image_count--;
         }
-
-      g_free (items);
     }
 
   dnd_remove = TRUE;
@@ -1158,7 +1157,7 @@ recount_pages (void)
 
 
 /******************************************************/
-/* Begining of the actual PDF functions               */
+/* Beginning of the actual PDF functions              */
 /******************************************************/
 
 static cairo_surface_t *

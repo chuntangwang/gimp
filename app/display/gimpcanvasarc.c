@@ -32,7 +32,6 @@
 
 #include "gimpcanvasarc.h"
 #include "gimpdisplayshell.h"
-#include "gimpdisplayshell-transform.h"
 
 
 enum
@@ -69,19 +68,17 @@ struct _GimpCanvasArcPrivate
 
 /*  local function prototypes  */
 
-static void             gimp_canvas_arc_set_property (GObject          *object,
-                                                      guint             property_id,
-                                                      const GValue     *value,
-                                                      GParamSpec       *pspec);
-static void             gimp_canvas_arc_get_property (GObject          *object,
-                                                      guint             property_id,
-                                                      GValue           *value,
-                                                      GParamSpec       *pspec);
-static void             gimp_canvas_arc_draw         (GimpCanvasItem   *item,
-                                                      GimpDisplayShell *shell,
-                                                      cairo_t          *cr);
-static cairo_region_t * gimp_canvas_arc_get_extents  (GimpCanvasItem   *item,
-                                                      GimpDisplayShell *shell);
+static void             gimp_canvas_arc_set_property (GObject        *object,
+                                                      guint           property_id,
+                                                      const GValue   *value,
+                                                      GParamSpec     *pspec);
+static void             gimp_canvas_arc_get_property (GObject        *object,
+                                                      guint           property_id,
+                                                      GValue         *value,
+                                                      GParamSpec     *pspec);
+static void             gimp_canvas_arc_draw         (GimpCanvasItem *item,
+                                                      cairo_t        *cr);
+static cairo_region_t * gimp_canvas_arc_get_extents  (GimpCanvasItem *item);
 
 
 G_DEFINE_TYPE (GimpCanvasArc, gimp_canvas_arc,
@@ -224,25 +221,24 @@ gimp_canvas_arc_get_property (GObject    *object,
 }
 
 static void
-gimp_canvas_arc_transform (GimpCanvasItem   *item,
-                           GimpDisplayShell *shell,
-                           gdouble          *center_x,
-                           gdouble          *center_y,
-                           gdouble          *radius_x,
-                           gdouble          *radius_y)
+gimp_canvas_arc_transform (GimpCanvasItem *item,
+                           gdouble        *center_x,
+                           gdouble        *center_y,
+                           gdouble        *radius_x,
+                           gdouble        *radius_y)
 {
   GimpCanvasArcPrivate *private = GET_PRIVATE (item);
   gdouble               x1, y1;
   gdouble               x2, y2;
 
-  gimp_display_shell_transform_xy_f (shell,
-                                     private->center_x - private->radius_x,
-                                     private->center_y - private->radius_y,
-                                     &x1, &y1);
-  gimp_display_shell_transform_xy_f (shell,
-                                     private->center_x + private->radius_x,
-                                     private->center_y + private->radius_y,
-                                     &x2, &y2);
+  gimp_canvas_item_transform_xy_f (item,
+                                   private->center_x - private->radius_x,
+                                   private->center_y - private->radius_y,
+                                   &x1, &y1);
+  gimp_canvas_item_transform_xy_f (item,
+                                   private->center_x + private->radius_x,
+                                   private->center_y + private->radius_y,
+                                   &x2, &y2);
 
   x1 = floor (x1);
   y1 = floor (y1);
@@ -263,15 +259,14 @@ gimp_canvas_arc_transform (GimpCanvasItem   *item,
 }
 
 static void
-gimp_canvas_arc_draw (GimpCanvasItem   *item,
-                      GimpDisplayShell *shell,
-                      cairo_t          *cr)
+gimp_canvas_arc_draw (GimpCanvasItem *item,
+                      cairo_t        *cr)
 {
   GimpCanvasArcPrivate *private = GET_PRIVATE (item);
   gdouble               center_x, center_y;
   gdouble               radius_x, radius_y;
 
-  gimp_canvas_arc_transform (item, shell,
+  gimp_canvas_arc_transform (item,
                              &center_x, &center_y,
                              &radius_x, &radius_y);
 
@@ -289,8 +284,7 @@ gimp_canvas_arc_draw (GimpCanvasItem   *item,
 }
 
 static cairo_region_t *
-gimp_canvas_arc_get_extents (GimpCanvasItem   *item,
-                             GimpDisplayShell *shell)
+gimp_canvas_arc_get_extents (GimpCanvasItem *item)
 {
   GimpCanvasArcPrivate  *private = GET_PRIVATE (item);
   cairo_region_t        *region;
@@ -298,7 +292,7 @@ gimp_canvas_arc_get_extents (GimpCanvasItem   *item,
   gdouble                center_x, center_y;
   gdouble                radius_x, radius_y;
 
-  gimp_canvas_arc_transform (item, shell,
+  gimp_canvas_arc_transform (item,
                              &center_x, &center_y,
                              &radius_x, &radius_y);
 

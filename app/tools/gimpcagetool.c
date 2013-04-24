@@ -48,8 +48,6 @@
 #include "widgets/gimphelp-ids.h"
 
 #include "display/gimpdisplay.h"
-#include "display/gimpdisplayshell.h"
-#include "display/gimpdisplayshell-transform.h"
 
 #include "gimpcagetool.h"
 #include "gimpcageoptions.h"
@@ -376,8 +374,7 @@ gimp_cage_tool_options_notify (GimpTool         *tool,
       else
         {
           /* switch to edit mode */
-          gimp_image_map_clear (ct->image_map);
-          gimp_cage_tool_image_map_flush (ct->image_map, tool);
+          gimp_image_map_abort (ct->image_map);
 
           gimp_tool_pop_status (tool, tool->display);
           ct->tool_state = CAGE_STATE_WAIT;
@@ -429,7 +426,8 @@ gimp_cage_tool_key_press (GimpTool    *tool,
         {
           gimp_tool_control_push_preserve (tool->control, TRUE);
 
-          gimp_image_map_commit (ct->image_map);
+          gimp_image_map_commit (ct->image_map,
+                                 GIMP_PROGRESS (tool));
           g_object_unref (ct->image_map);
           ct->image_map = NULL;
 
@@ -1242,7 +1240,8 @@ gimp_cage_tool_create_image_map (GimpCageTool *ct,
 
   ct->image_map = gimp_image_map_new (drawable,
                                       _("Cage transform"),
-                                      ct->render_node);
+                                      ct->render_node,
+                                      GIMP_STOCK_TOOL_CAGE);
 
   g_signal_connect (ct->image_map, "flush",
                     G_CALLBACK (gimp_cage_tool_image_map_flush),
@@ -1255,37 +1254,11 @@ gimp_cage_tool_image_map_flush (GimpImageMap *image_map,
 {
   GimpImage *image = gimp_display_get_image (tool->display);
 
-  gimp_projection_flush_now (gimp_image_get_projection (image));
-  gimp_display_flush_now (tool->display);
+  gimp_projection_flush (gimp_image_get_projection (image));
 }
 
 static void
 gimp_cage_tool_image_map_update (GimpCageTool *ct)
 {
-  GimpTool         *tool  = GIMP_TOOL (ct);
-  GimpDisplayShell *shell = gimp_display_get_shell (tool->display);
-  GimpItem         *item  = GIMP_ITEM (tool->drawable);
-  gint              x, y;
-  gint              w, h;
-  gint              off_x, off_y;
-  GeglRectangle     visible;
-
-  gimp_display_shell_untransform_viewport (shell, &x, &y, &w, &h);
-
-  gimp_item_get_offset (item, &off_x, &off_y);
-
-  gimp_rectangle_intersect (x, y, w, h,
-                            off_x,
-                            off_y,
-                            gimp_item_get_width  (item),
-                            gimp_item_get_height (item),
-                            &visible.x,
-                            &visible.y,
-                            &visible.width,
-                            &visible.height);
-
-  visible.x -= off_x;
-  visible.y -= off_y;
-
-  gimp_image_map_apply (ct->image_map, &visible);
+  gimp_image_map_apply (ct->image_map);
 }

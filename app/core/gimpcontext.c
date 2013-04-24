@@ -1929,7 +1929,25 @@ gimp_context_real_set_display (GimpContext *context,
   GimpObject *old_display;
 
   if (context->display == display)
-    return;
+    {
+      /*  make sure that setting a display *always* sets the image
+       *  to that display's image, even if the display already
+       *  matches
+       */
+      if (display)
+        {
+          GimpImage *image;
+
+          g_object_get (display, "image", &image, NULL);
+
+          gimp_context_real_set_image (context, image);
+
+          if (image)
+            g_object_unref (image);
+        }
+
+      return;
+    }
 
   old_display = context->display;
 
@@ -3102,8 +3120,8 @@ gimp_context_get_tool_preset (GimpContext *context)
 }
 
 void
-gimp_context_set_tool_preset (GimpContext  *context,
-                           GimpToolPreset *tool_preset)
+gimp_context_set_tool_preset (GimpContext    *context,
+                              GimpToolPreset *tool_preset)
 {
   g_return_if_fail (GIMP_IS_CONTEXT (context));
   g_return_if_fail (! tool_preset || GIMP_IS_TOOL_PRESET (tool_preset));
@@ -3228,7 +3246,7 @@ gimp_context_get_font_name (GimpContext *context)
 {
   g_return_val_if_fail (GIMP_IS_CONTEXT (context), NULL);
 
-  return (context->font ? gimp_object_get_name (context->font) : NULL);
+  return context->font_name;
 }
 
 void
@@ -3241,7 +3259,20 @@ gimp_context_set_font_name (GimpContext *context,
 
   font = gimp_container_get_child_by_name (context->gimp->fonts, name);
 
-  gimp_context_set_font (context, GIMP_FONT (font));
+  if (font)
+    {
+      gimp_context_set_font (context, GIMP_FONT (font));
+    }
+  else
+    {
+      /* No font with this name exists, use the standard font, but
+       * keep the intended name around
+       */
+      gimp_context_set_font (context, gimp_font_get_standard ());
+
+      g_free (context->font_name);
+      context->font_name = g_strdup (name);
+    }
 }
 
 void

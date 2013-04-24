@@ -56,7 +56,8 @@ static gboolean   gimp_hue_saturation_tool_initialize    (GimpTool         *tool
                                                           GError          **error);
 
 static GeglNode * gimp_hue_saturation_tool_get_operation (GimpImageMapTool *im_tool,
-                                                          GObject         **config);
+                                                          GObject         **config,
+                                                          gchar           **undo_desc);
 static void       gimp_hue_saturation_tool_dialog        (GimpImageMapTool *im_tool);
 static void       gimp_hue_saturation_tool_reset         (GimpImageMapTool *im_tool);
 
@@ -130,9 +131,8 @@ gimp_hue_saturation_tool_initialize (GimpTool     *tool,
                                      GimpDisplay  *display,
                                      GError      **error)
 {
-  GimpHueSaturationTool *hs_tool  = GIMP_HUE_SATURATION_TOOL (tool);
-  GimpImage             *image    = gimp_display_get_image (display);
-  GimpDrawable          *drawable = gimp_image_get_active_drawable (image);
+  GimpImage    *image    = gimp_display_get_image (display);
+  GimpDrawable *drawable = gimp_image_get_active_drawable (image);
 
   if (! drawable)
     return FALSE;
@@ -144,35 +144,28 @@ gimp_hue_saturation_tool_initialize (GimpTool     *tool,
       return FALSE;
     }
 
-  gimp_config_reset (GIMP_CONFIG (hs_tool->config));
-
   return GIMP_TOOL_CLASS (parent_class)->initialize (tool, display, error);
 }
 
 static GeglNode *
 gimp_hue_saturation_tool_get_operation (GimpImageMapTool  *im_tool,
-                                        GObject          **config)
+                                        GObject          **config,
+                                        gchar            **undo_desc)
 {
   GimpHueSaturationTool *hs_tool = GIMP_HUE_SATURATION_TOOL (im_tool);
-  GeglNode              *node;
-
-  node = g_object_new (GEGL_TYPE_NODE,
-                       "operation", "gimp:hue-saturation",
-                       NULL);
 
   hs_tool->config = g_object_new (GIMP_TYPE_HUE_SATURATION_CONFIG, NULL);
-
-  *config = G_OBJECT (hs_tool->config);
 
   g_signal_connect_object (hs_tool->config, "notify",
                            G_CALLBACK (hue_saturation_config_notify),
                            G_OBJECT (hs_tool), 0);
 
-  gegl_node_set (node,
-                 "config", hs_tool->config,
-                 NULL);
+  *config = G_OBJECT (hs_tool->config);
 
-  return node;
+  return gegl_node_new_child (NULL,
+                              "operation", "gimp:hue-saturation",
+                              "config",    hs_tool->config,
+                              NULL);
 }
 
 
@@ -470,8 +463,6 @@ hue_saturation_config_notify (GObject               *object,
     }
 
   hue_saturation_update_color_areas (hs_tool);
-
-  gimp_image_map_tool_preview (GIMP_IMAGE_MAP_TOOL (hs_tool));
 }
 
 static void

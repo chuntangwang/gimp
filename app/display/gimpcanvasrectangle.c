@@ -30,7 +30,6 @@
 
 #include "gimpcanvasrectangle.h"
 #include "gimpdisplayshell.h"
-#include "gimpdisplayshell-transform.h"
 
 
 enum
@@ -63,19 +62,17 @@ struct _GimpCanvasRectanglePrivate
 
 /*  local function prototypes  */
 
-static void             gimp_canvas_rectangle_set_property (GObject          *object,
-                                                            guint             property_id,
-                                                            const GValue     *value,
-                                                            GParamSpec       *pspec);
-static void             gimp_canvas_rectangle_get_property (GObject          *object,
-                                                            guint             property_id,
-                                                            GValue           *value,
-                                                            GParamSpec       *pspec);
-static void             gimp_canvas_rectangle_draw         (GimpCanvasItem   *item,
-                                                            GimpDisplayShell *shell,
-                                                            cairo_t          *cr);
-static cairo_region_t * gimp_canvas_rectangle_get_extents  (GimpCanvasItem   *item,
-                                                            GimpDisplayShell *shell);
+static void             gimp_canvas_rectangle_set_property (GObject        *object,
+                                                            guint           property_id,
+                                                            const GValue   *value,
+                                                            GParamSpec     *pspec);
+static void             gimp_canvas_rectangle_get_property (GObject        *object,
+                                                            guint           property_id,
+                                                            GValue         *value,
+                                                            GParamSpec     *pspec);
+static void             gimp_canvas_rectangle_draw         (GimpCanvasItem *item,
+                                                            cairo_t        *cr);
+static cairo_region_t * gimp_canvas_rectangle_get_extents  (GimpCanvasItem *item);
 
 
 G_DEFINE_TYPE (GimpCanvasRectangle, gimp_canvas_rectangle,
@@ -198,29 +195,28 @@ gimp_canvas_rectangle_get_property (GObject    *object,
 }
 
 static void
-gimp_canvas_rectangle_transform (GimpCanvasItem   *item,
-                                 GimpDisplayShell *shell,
-                                 gdouble          *x,
-                                 gdouble          *y,
-                                 gdouble          *w,
-                                 gdouble          *h)
+gimp_canvas_rectangle_transform (GimpCanvasItem *item,
+                                 gdouble        *x,
+                                 gdouble        *y,
+                                 gdouble        *w,
+                                 gdouble        *h)
 {
   GimpCanvasRectanglePrivate *private = GET_PRIVATE (item);
   gdouble                     x1, y1;
   gdouble                     x2, y2;
 
-  gimp_display_shell_transform_xy_f (shell,
-                                     MIN (private->x,
-                                          private->x + private->width),
-                                     MIN (private->y,
-                                          private->y + private->height),
-                                     &x1, &y1);
-  gimp_display_shell_transform_xy_f (shell,
-                                     MAX (private->x,
-                                          private->x + private->width),
-                                     MAX (private->y,
-                                          private->y + private->height),
-                                     &x2, &y2);
+  gimp_canvas_item_transform_xy_f (item,
+                                   MIN (private->x,
+                                        private->x + private->width),
+                                   MIN (private->y,
+                                        private->y + private->height),
+                                   &x1, &y1);
+  gimp_canvas_item_transform_xy_f (item,
+                                   MAX (private->x,
+                                        private->x + private->width),
+                                   MAX (private->y,
+                                        private->y + private->height),
+                                   &x2, &y2);
 
   x1 = floor (x1);
   y1 = floor (y1);
@@ -247,15 +243,14 @@ gimp_canvas_rectangle_transform (GimpCanvasItem   *item,
 }
 
 static void
-gimp_canvas_rectangle_draw (GimpCanvasItem   *item,
-                            GimpDisplayShell *shell,
-                            cairo_t          *cr)
+gimp_canvas_rectangle_draw (GimpCanvasItem *item,
+                            cairo_t        *cr)
 {
   GimpCanvasRectanglePrivate *private = GET_PRIVATE (item);
   gdouble                     x, y;
   gdouble                     w, h;
 
-  gimp_canvas_rectangle_transform (item, shell, &x, &y, &w, &h);
+  gimp_canvas_rectangle_transform (item, &x, &y, &w, &h);
 
   cairo_rectangle (cr, x, y, w, h);
 
@@ -266,15 +261,14 @@ gimp_canvas_rectangle_draw (GimpCanvasItem   *item,
 }
 
 static cairo_region_t *
-gimp_canvas_rectangle_get_extents (GimpCanvasItem   *item,
-                                   GimpDisplayShell *shell)
+gimp_canvas_rectangle_get_extents (GimpCanvasItem *item)
 {
   GimpCanvasRectanglePrivate *private = GET_PRIVATE (item);
   cairo_rectangle_int_t       rectangle;
   gdouble                     x, y;
   gdouble                     w, h;
 
-  gimp_canvas_rectangle_transform (item, shell, &x, &y, &w, &h);
+  gimp_canvas_rectangle_transform (item, &x, &y, &w, &h);
 
   if (private->filled)
     {

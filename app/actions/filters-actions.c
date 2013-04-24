@@ -39,6 +39,12 @@
 
 static const GimpStringActionEntry filters_actions[] =
 {
+  { "filters-c2g", GIMP_STOCK_GEGL,
+    NC_("filters-action", "Color to Gray..."), NULL,
+    NC_("filters-action", "Color to grayscale conversion"),
+    "gegl:c2g",
+    NULL /* FIXME GIMP_HELP_FILTER_C2G */ },
+
   { "filters-cartoon", GIMP_STOCK_GEGL,
     NC_("filters-action", "Ca_rtoon..."), NULL,
     NC_("filters-action", "Simulate a cartoon by enhancing edges"),
@@ -63,6 +69,12 @@ static const GimpStringActionEntry filters_actions[] =
     "gegl:color-to-alpha",
     NULL /* FIXME GIMP_HELP_FILTER_COLOR_TO_ALPHA */ },
 
+  { "filters-dot", GIMP_STOCK_GEGL,
+    NC_("filters-action", "Dots..."), NULL,
+    NC_("filters-action", "Simplify image into an array of solid-colored dots"),
+    "gegl:dot",
+    NULL /* FIXME GIMP_HELP_FILTER_DOT */ },
+
   { "filters-difference-of-gaussians", GIMP_STOCK_GEGL,
     NC_("filters-action", "Difference of Gaussians..."), NULL,
     NC_("filters-action", "Edge detection with control of edge thickness"),
@@ -86,6 +98,18 @@ static const GimpStringActionEntry filters_actions[] =
     NC_("filters-action", "Corrects lens distortion"),
     "gegl:lens-distortion",
     NULL /* FIXME GIMP_HELP_FILTER_LENS_DISTORTION */ },
+
+  { "filters-mono-mixer", GIMP_STOCK_GEGL,
+    NC_("filters-action", "Mono Mixer..."), NULL,
+    NC_("filters-action", "Monochrome channel mixer"),
+    "gegl:mono-mixer",
+    NULL /* FIXME GIMP_HELP_FILTER_MONO_MIXER */ },
+
+  { "filters-noise-cie-lch", GIMP_STOCK_GEGL,
+    NC_("filters-action", "CIE lch Noise..."), NULL,
+    NC_("filters-action", "Randomize lightness, chroma and hue independently"),
+    "gegl:noise-CIE_lch",
+    NULL /* FIXME GIMP_HELP_FILTER_NOISE_CIE_LCH */ },
 
   { "filters-noise-hsv", GIMP_STOCK_GEGL,
     NC_("filters-action", "HSV Noise..."), NULL,
@@ -170,6 +194,12 @@ static const GimpStringActionEntry filters_actions[] =
     NC_("filters-action", "The most widely used method for sharpening an image"),
     "gegl:unsharp-mask",
     NULL /* FIXME GIMP_HELP_FILTER_UNSHARP_MASK */ },
+
+  { "filters-vignette", GIMP_STOCK_GEGL,
+    NC_("filters-action", "_Vignette..."), NULL,
+    NC_("filters-action", "Applies a vignette to an image"),
+    "gegl:vignette",
+    NULL /* FIXME GIMP_HELP_FILTER_VIGNETTE */ },
 };
 
 void
@@ -219,13 +249,17 @@ filters_actions_update (GimpActionGroup *group,
 #define SET_SENSITIVE(action,condition) \
         gimp_action_group_set_action_sensitive (group, action, (condition) != 0)
 
+  SET_SENSITIVE ("filters-c2g",                     writable && !gray);
   SET_SENSITIVE ("filters-cartoon",                 writable);
   SET_SENSITIVE ("filters-color-reduction",         writable);
   SET_SENSITIVE ("filters-color-temperature",       writable && !gray);
   SET_SENSITIVE ("filters-color-to-alpha",          writable && !gray && alpha);
   SET_SENSITIVE ("filters-difference-of-gaussians", writable);
+  SET_SENSITIVE ("filters-dot",                     writable);
   SET_SENSITIVE ("filters-gaussian-blur",           writable);
   SET_SENSITIVE ("filters-laplace",                 writable);
+  SET_SENSITIVE ("filters-mono-mixer",              writable && !gray);
+  SET_SENSITIVE ("filters-noise-cie-lch",           writable);
   SET_SENSITIVE ("filters-noise-hsv",               writable && !gray);
   SET_SENSITIVE ("filters-noise-hurl",              writable);
   SET_SENSITIVE ("filters-noise-pick",              writable);

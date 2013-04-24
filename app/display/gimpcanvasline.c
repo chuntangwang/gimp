@@ -30,7 +30,6 @@
 
 #include "gimpcanvasline.h"
 #include "gimpdisplayshell.h"
-#include "gimpdisplayshell-transform.h"
 
 
 enum
@@ -61,19 +60,17 @@ struct _GimpCanvasLinePrivate
 
 /*  local function prototypes  */
 
-static void             gimp_canvas_line_set_property (GObject          *object,
-                                                       guint             property_id,
-                                                       const GValue     *value,
-                                                       GParamSpec       *pspec);
-static void             gimp_canvas_line_get_property (GObject          *object,
-                                                       guint             property_id,
-                                                       GValue           *value,
-                                                       GParamSpec       *pspec);
-static void             gimp_canvas_line_draw         (GimpCanvasItem   *item,
-                                                       GimpDisplayShell *shell,
-                                                       cairo_t          *cr);
-static cairo_region_t * gimp_canvas_line_get_extents  (GimpCanvasItem   *item,
-                                                       GimpDisplayShell *shell);
+static void             gimp_canvas_line_set_property (GObject        *object,
+                                                       guint           property_id,
+                                                       const GValue   *value,
+                                                       GParamSpec     *pspec);
+static void             gimp_canvas_line_get_property (GObject        *object,
+                                                       guint           property_id,
+                                                       GValue         *value,
+                                                       GParamSpec     *pspec);
+static void             gimp_canvas_line_draw         (GimpCanvasItem *item,
+                                                       cairo_t        *cr);
+static cairo_region_t * gimp_canvas_line_get_extents  (GimpCanvasItem *item);
 
 
 G_DEFINE_TYPE (GimpCanvasLine, gimp_canvas_line, GIMP_TYPE_CANVAS_ITEM)
@@ -184,21 +181,20 @@ gimp_canvas_line_get_property (GObject    *object,
 }
 
 static void
-gimp_canvas_line_transform (GimpCanvasItem   *item,
-                            GimpDisplayShell *shell,
-                            gdouble          *x1,
-                            gdouble          *y1,
-                            gdouble          *x2,
-                            gdouble          *y2)
+gimp_canvas_line_transform (GimpCanvasItem *item,
+                            gdouble        *x1,
+                            gdouble        *y1,
+                            gdouble        *x2,
+                            gdouble        *y2)
 {
   GimpCanvasLinePrivate *private = GET_PRIVATE (item);
 
-  gimp_display_shell_transform_xy_f (shell,
-                                     private->x1, private->y1,
-                                     x1, y1);
-  gimp_display_shell_transform_xy_f (shell,
-                                     private->x2, private->y2,
-                                     x2, y2);
+  gimp_canvas_item_transform_xy_f (item,
+                                   private->x1, private->y1,
+                                   x1, y1);
+  gimp_canvas_item_transform_xy_f (item,
+                                   private->x2, private->y2,
+                                   x2, y2);
 
   *x1 = floor (*x1) + 0.5;
   *y1 = floor (*y1) + 0.5;
@@ -207,14 +203,13 @@ gimp_canvas_line_transform (GimpCanvasItem   *item,
 }
 
 static void
-gimp_canvas_line_draw (GimpCanvasItem   *item,
-                       GimpDisplayShell *shell,
-                       cairo_t          *cr)
+gimp_canvas_line_draw (GimpCanvasItem *item,
+                       cairo_t        *cr)
 {
   gdouble x1, y1;
   gdouble x2, y2;
 
-  gimp_canvas_line_transform (item, shell, &x1, &y1, &x2, &y2);
+  gimp_canvas_line_transform (item, &x1, &y1, &x2, &y2);
 
   cairo_move_to (cr, x1, y1);
   cairo_line_to (cr, x2, y2);
@@ -223,14 +218,13 @@ gimp_canvas_line_draw (GimpCanvasItem   *item,
 }
 
 static cairo_region_t *
-gimp_canvas_line_get_extents (GimpCanvasItem   *item,
-                              GimpDisplayShell *shell)
+gimp_canvas_line_get_extents (GimpCanvasItem *item)
 {
   cairo_rectangle_int_t rectangle;
   gdouble               x1, y1;
   gdouble               x2, y2;
 
-  gimp_canvas_line_transform (item, shell, &x1, &y1, &x2, &y2);
+  gimp_canvas_line_transform (item, &x1, &y1, &x2, &y2);
 
   if (x1 == x2 || y1 == y2)
     {

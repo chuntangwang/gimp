@@ -27,29 +27,16 @@ GeglNode * gimp_gegl_create_apply_opacity_node (GeglBuffer           *mask,
                                                 gint                  mask_offset_x,
                                                 gint                  mask_offset_y,
                                                 gdouble               opacity);
-GeglNode * gimp_gegl_create_apply_buffer_node  (GeglBuffer           *buffer,
-                                                gint                  buffer_offset_x,
-                                                gint                  buffer_offset_y,
-                                                gint                  src_offset_x,
-                                                gint                  src_offset_y,
-                                                gint                  dest_offset_x,
-                                                gint                  dest_offset_y,
-                                                GeglBuffer           *mask,
-                                                gint                  mask_offset_x,
-                                                gint                  mask_offset_y,
-                                                gdouble               opacity,
-                                                GimpLayerModeEffects  mode,
-                                                GimpComponentMask     affect);
-
 GeglNode * gimp_gegl_add_buffer_source         (GeglNode             *parent,
                                                 GeglBuffer           *buffer,
                                                 gint                  offset_x,
                                                 gint                  offset_y);
 
-void       gimp_gegl_mode_node_set             (GeglNode             *node,
+void       gimp_gegl_mode_node_set_mode        (GeglNode             *node,
                                                 GimpLayerModeEffects  mode,
-                                                gdouble               opacity,
                                                 gboolean              linear);
+void       gimp_gegl_mode_node_set_opacity     (GeglNode             *node,
+                                                gdouble               opacity);
 void       gimp_gegl_node_set_matrix           (GeglNode             *node,
                                                 const GimpMatrix3    *matrix);
 

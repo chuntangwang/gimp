@@ -1,4 +1,4 @@
-/* T I N Y S C H E M E    1 . 4 0
+/* T I N Y S C H E M E    1 . 4 1
  *   Dimitrios Souflis (dsouflis@acm.org)
  *   Based on MiniScheme (original credits follow)
  * (MINISCM)               coded by Atsushi Moriwaki (11/5/1989)
@@ -102,7 +102,7 @@ ts_output_string (TsOutputType  type,
  *  Basic memory allocation units
  */
 
-#define banner "TinyScheme 1.40 (with UTF-8 support)"
+#define banner "TinyScheme 1.41 (with UTF-8 support)"
 
 #include <string.h>
 #include <stdlib.h>
@@ -1236,14 +1236,14 @@ static pointer mk_sharp_const(scheme *sc, char *name) {
           return (sc->F);
      else if (*name == 'o') {/* #o (octal) */
           snprintf(tmp, STRBUFFSIZE, "0%s", name+1);
-          sscanf(tmp, "%lo", &x);
+          sscanf(tmp, "%lo", (long unsigned *)&x);
           return (mk_integer(sc, x));
      } else if (*name == 'd') {    /* #d (decimal) */
-          sscanf(name+1, "%ld", &x);
+          sscanf(name+1, "%ld", (long int *)&x);
           return (mk_integer(sc, x));
      } else if (*name == 'x') {    /* #x (hex) */
           snprintf(tmp, STRBUFFSIZE, "0x%s", name+1);
-          sscanf(tmp, "%lx", &x);
+          sscanf(tmp, "%lx", (long unsigned *)&x);
           return (mk_integer(sc, x));
      } else if (*name == 'b') {    /* #b (binary) */
           x = binary_decode(name+1);
@@ -1260,7 +1260,7 @@ static pointer mk_sharp_const(scheme *sc, char *name) {
                c='\t';
      } else if(name[1]=='x' && name[2]!=0) {
           int c1=0;
-          if(sscanf(name+2,"%x",&c1)==1 && c1 < UCHAR_MAX) {
+          if(sscanf(name+2,"%x",(unsigned int *)&c1)==1 && c1 < UCHAR_MAX) {
                c=c1;
           } else {
                return sc->NIL;
@@ -1949,7 +1949,8 @@ static INLINE int skipspace(scheme *sc) {
 
 /* record it */
 #if SHOW_ERROR_LINE
-     sc->load_stack[sc->file_i].rep.stdio.curr_line += curr_line;
+     if (sc->load_stack[sc->file_i].kind & port_file)
+       sc->load_stack[sc->file_i].rep.stdio.curr_line += curr_line;
 #endif
 
      if(c!=EOF) {
@@ -1988,7 +1989,7 @@ static int token(scheme *sc) {
             ;
 
 #if SHOW_ERROR_LINE
-           if(c == '\n')
+           if(c == '\n' && sc->load_stack[sc->file_i].kind & port_file)
              sc->load_stack[sc->file_i].rep.stdio.curr_line++;
 #endif
 
@@ -2021,7 +2022,7 @@ static int token(scheme *sc) {
                    ;
 
 #if SHOW_ERROR_LINE
-           if(c == '\n')
+           if(c == '\n' && sc->load_stack[sc->file_i].kind & port_file)
              sc->load_stack[sc->file_i].rep.stdio.curr_line++;
 #endif
 
@@ -2133,7 +2134,7 @@ static void atom2str(scheme *sc, pointer l, int f, char **pp, int *plen) {
                    /* r5rs says there must be a '.' (unless 'e'?) */
                    f = strcspn(p, ".e");
                    if (p[f] == 0) {
-                        p[f] = '.'; // not found, so add '.0' at the end
+                        p[f] = '.'; /* not found, so add '.0' at the end */
                         p[f+1] = '0';
                         p[f+2] = 0;
                    }
@@ -2497,7 +2498,8 @@ static pointer _Error_1(scheme *sc, const char *s, pointer a) {
      char sbuf[STRBUFFSIZE];
 
      /* make sure error is not in REPL */
-     if(sc->load_stack[sc->file_i].rep.stdio.file != stdin) {
+     if (sc->load_stack[sc->file_i].kind & port_file &&
+         sc->load_stack[sc->file_i].rep.stdio.file != stdin) {
        int ln = sc->load_stack[sc->file_i].rep.stdio.curr_line;
        const char *fname = sc->load_stack[sc->file_i].rep.stdio.filename;
 
@@ -3365,7 +3367,7 @@ static pointer opexe_2(scheme *sc, enum scheme_opcodes op) {
           x=car(sc->args);
           if (num_is_integer(x) && num_is_integer(y))
              real_result=0;
-          /* This 'if' is an R5RS compatability fix. */
+          /* This 'if' is an R5RS compatibility fix. */
           /* NOTE: Remove this 'if' fix for R6RS.    */
           if (rvalue(x) == 0 && rvalue(y) < 0) {
              result = 0.0;
@@ -4431,7 +4433,7 @@ static pointer opexe_5(scheme *sc, enum scheme_opcodes op) {
                if (c != '\n')
                  backchar(sc,c);
 #if SHOW_ERROR_LINE
-               else
+               else if (sc->load_stack[sc->file_i].kind & port_file)
                   sc->load_stack[sc->file_i].rep.stdio.curr_line++;
 #endif
                sc->nesting_stack[sc->file_i]--;
@@ -5082,11 +5084,12 @@ void scheme_deinit(scheme *sc) {
   }
 
 #if SHOW_ERROR_LINE
-  fname = sc->load_stack[i].rep.stdio.filename;
-
   for(i=0; i<sc->file_i; i++) {
-    if(fname)
-      sc->free(fname);
+    if (sc->load_stack[sc->file_i].kind & port_file) {
+      fname = sc->load_stack[i].rep.stdio.filename;
+      if(fname)
+        sc->free(fname);
+    }
   }
 #endif
 }

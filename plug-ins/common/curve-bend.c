@@ -66,7 +66,6 @@
 
 #define MIDDLE 127
 
-#define SIGNED_ROUND(x)  ((int) (((x < 0) ? (x) - 0.5 : (x) + 0.5)  ))
 #define MIX_CHANNEL(a, b, m)  (((a * m) + (b * (255 - m))) / 255)
 
 #define UP_GRAPH              0x1
@@ -2781,7 +2780,7 @@ p_add_layer (gint       width,
   l_new_drawable = gimp_drawable_get (l_new_layer_id);
   if (!l_new_drawable)
     {
-      g_printerr ("p_add_layer: cant get new_drawable\n");
+      g_printerr ("p_add_layer: can't get new_drawable\n");
       return NULL;
     }
 

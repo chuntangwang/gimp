@@ -43,14 +43,12 @@ gimp_gegl_apply_operation (GeglBuffer          *src_buffer,
                            const GeglRectangle *dest_rect)
 {
   GeglNode      *gegl;
-  GeglNode      *src_node;
   GeglNode      *dest_node;
-  GeglProcessor *processor;
   GeglRectangle  rect = { 0, };
   gdouble        value;
   gboolean       progress_active = FALSE;
 
-  g_return_if_fail (GEGL_IS_BUFFER (src_buffer));
+  g_return_if_fail (src_buffer == NULL || GEGL_IS_BUFFER (src_buffer));
   g_return_if_fail (progress == NULL || GIMP_IS_PROGRESS (progress));
   g_return_if_fail (GEGL_IS_NODE (operation));
   g_return_if_fail (GEGL_IS_BUFFER (dest_buffer));
@@ -67,23 +65,37 @@ gimp_gegl_apply_operation (GeglBuffer          *src_buffer,
 
   gegl = gegl_node_new ();
 
-  src_node = gegl_node_new_child (gegl,
-                                  "operation", "gegl:buffer-source",
-                                  "buffer",    src_buffer,
-                                  NULL);
+  if (! gegl_node_get_parent (operation))
+    gegl_node_add_child (gegl, operation);
+
+  if (src_buffer)
+    {
+      GeglNode *src_node;
+
+      src_node = gegl_node_new_child (gegl,
+                                      "operation", "gegl:buffer-source",
+                                      "buffer",    src_buffer,
+                                      NULL);
+
+      gegl_node_connect_to (src_node,  "output",
+                            operation, "input");
+    }
+
   dest_node = gegl_node_new_child (gegl,
                                    "operation", "gegl:write-buffer",
                                    "buffer",    dest_buffer,
                                    NULL);
 
-  gegl_node_add_child (gegl, operation);
 
-  gegl_node_link_many (src_node, operation, dest_node, NULL);
-
-  processor = gegl_node_new_processor (dest_node, &rect);
+  gegl_node_connect_to (operation, "output",
+                        dest_node, "input");
 
   if (progress)
     {
+      GeglProcessor *processor;
+
+      processor = gegl_node_new_processor (dest_node, &rect);
+
       progress_active = gimp_progress_is_active (progress);
 
       if (progress_active)
@@ -95,13 +107,17 @@ gimp_gegl_apply_operation (GeglBuffer          *src_buffer,
         {
           gimp_progress_start (progress, undo_desc, FALSE);
         }
+
+      while (gegl_processor_work (processor, &value))
+        gimp_progress_set_value (progress, value);
+
+      g_object_unref (processor);
     }
-
-  while (gegl_processor_work (processor, &value))
-    if (progress)
-      gimp_progress_set_value (progress, value);
-
-  g_object_unref (processor);
+  else
+    {
+      gegl_node_blit (dest_node, 1.0, &rect,
+                      NULL, NULL, 0, GEGL_BLIT_DEFAULT);
+    }
 
   g_object_unref (gegl);
 
@@ -156,6 +172,28 @@ gimp_gegl_apply_flatten (GeglBuffer    *src_buffer,
   gimp_gegl_apply_operation (src_buffer, progress, undo_desc,
                              node, dest_buffer, NULL);
   g_object_unref (node);
+}
+
+void
+gimp_gegl_apply_feather (GeglBuffer   *src_buffer,
+                         GimpProgress *progress,
+                         const gchar  *undo_desc,
+                         GeglBuffer   *dest_buffer,
+                         gdouble       radius_x,
+                         gdouble       radius_y)
+{
+  g_return_if_fail (GEGL_IS_BUFFER (src_buffer));
+  g_return_if_fail (progress == NULL || GIMP_IS_PROGRESS (progress));
+  g_return_if_fail (GEGL_IS_BUFFER (dest_buffer));
+
+  /* 3.5 is completely magic and picked to visually match the old
+   * gaussian_blur_region() on a crappy laptop display
+   */
+  gimp_gegl_apply_gaussian_blur (src_buffer,
+                                 progress, undo_desc,
+                                 dest_buffer,
+                                 radius_x / 3.5,
+                                 radius_y / 3.5);
 }
 
 void

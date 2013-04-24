@@ -32,10 +32,9 @@
 #include "core/gimpcontext.h"
 #include "core/gimpparamspecs.h"
 
+#include "gimpcanvas-style.h"
 #include "gimpcanvaspen.h"
 #include "gimpdisplayshell.h"
-#include "gimpdisplayshell-style.h"
-#include "gimpdisplayshell-transform.h"
 
 
 enum
@@ -62,19 +61,17 @@ struct _GimpCanvasPenPrivate
 
 /*  local function prototypes  */
 
-static void             gimp_canvas_pen_set_property (GObject          *object,
-                                                      guint             property_id,
-                                                      const GValue     *value,
-                                                      GParamSpec       *pspec);
-static void             gimp_canvas_pen_get_property (GObject          *object,
-                                                      guint             property_id,
-                                                      GValue           *value,
-                                                      GParamSpec       *pspec);
-static cairo_region_t * gimp_canvas_pen_get_extents  (GimpCanvasItem   *item,
-                                                      GimpDisplayShell *shell);
-static void             gimp_canvas_pen_stroke       (GimpCanvasItem   *item,
-                                                      GimpDisplayShell *shell,
-                                                      cairo_t          *cr);
+static void             gimp_canvas_pen_set_property (GObject        *object,
+                                                      guint           property_id,
+                                                      const GValue   *value,
+                                                      GParamSpec     *pspec);
+static void             gimp_canvas_pen_get_property (GObject        *object,
+                                                      guint           property_id,
+                                                      GValue         *value,
+                                                      GParamSpec     *pspec);
+static cairo_region_t * gimp_canvas_pen_get_extents  (GimpCanvasItem *item);
+static void             gimp_canvas_pen_stroke       (GimpCanvasItem *item,
+                                                      cairo_t        *cr);
 
 
 G_DEFINE_TYPE (GimpCanvasPen, gimp_canvas_pen,
@@ -160,13 +157,12 @@ gimp_canvas_pen_get_property (GObject    *object,
 }
 
 static cairo_region_t *
-gimp_canvas_pen_get_extents (GimpCanvasItem   *item,
-                             GimpDisplayShell *shell)
+gimp_canvas_pen_get_extents (GimpCanvasItem *item)
 {
   GimpCanvasPenPrivate *private = GET_PRIVATE (item);
   cairo_region_t       *region;
 
-  region = GIMP_CANVAS_ITEM_CLASS (parent_class)->get_extents (item, shell);
+  region = GIMP_CANVAS_ITEM_CLASS (parent_class)->get_extents (item);
 
   if (region)
     {
@@ -186,13 +182,13 @@ gimp_canvas_pen_get_extents (GimpCanvasItem   *item,
 }
 
 static void
-gimp_canvas_pen_stroke (GimpCanvasItem   *item,
-                        GimpDisplayShell *shell,
-                        cairo_t          *cr)
+gimp_canvas_pen_stroke (GimpCanvasItem *item,
+                        cairo_t        *cr)
 {
   GimpCanvasPenPrivate *private = GET_PRIVATE (item);
 
-  gimp_display_shell_set_pen_style (shell, cr, &private->color, private->width);
+  gimp_canvas_set_pen_style (gimp_canvas_item_get_canvas (item), cr,
+                             &private->color, private->width);
   cairo_stroke (cr);
 }
 

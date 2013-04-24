@@ -85,8 +85,12 @@ open_tag (GimpTextBuffer *buffer,
     {
       if (attribute && attribute_value)
         {
+          gchar *escaped = g_markup_escape_text (attribute_value, -1);
+
           g_string_append_printf (string, "<%s %s=\"%s\">",
-                                  name, attribute, attribute_value);
+                                  name, attribute, escaped);
+
+          g_free (escaped);
           g_free (attribute_value);
         }
       else
@@ -276,6 +280,13 @@ typedef struct
   gchar  *text;
   GSList *tags;
 } TextSpan;
+
+static void set_error (GError              **err,
+                       GMarkupParseContext  *context,
+                       int                   error_domain,
+                       int                   error_code,
+                       const char           *format,
+                       ...) G_GNUC_PRINTF (5, 6);
 
 static void
 set_error (GError              **err,

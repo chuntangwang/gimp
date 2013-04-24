@@ -126,6 +126,8 @@ libappcore_a_sources = \
 	gimpdrawable-combine.h			\
 	gimpdrawable-equalize.c			\
 	gimpdrawable-equalize.h			\
+	gimpdrawable-filter.c			\
+	gimpdrawable-filter.h			\
 	gimpdrawable-foreground-extract.c	\
 	gimpdrawable-foreground-extract.h	\
 	gimpdrawable-histogram.c		\
@@ -163,8 +165,12 @@ libappcore_a_sources = \
 	gimperror.h				\
 	gimpfilloptions.c			\
 	gimpfilloptions.h			\
+	gimpfilter.c				\
+	gimpfilter.h				\
 	gimpfilteredcontainer.c			\
 	gimpfilteredcontainer.h			\
+	gimpfilterstack.c			\
+	gimpfilterstack.h			\
 	gimpfloatingselundo.c			\
 	gimpfloatingselundo.h			\
 	gimpgradient.c				\

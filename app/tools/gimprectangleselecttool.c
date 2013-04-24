@@ -369,7 +369,7 @@ gimp_rectangle_select_tool_button_press (GimpTool            *tool,
                                       display, coords))
     {
       /* In some cases we want to finish the rectangle select tool
-       * and hand over responsability to the selection tool
+       * and hand over responsibility to the selection tool
        */
       gimp_rectangle_tool_execute (rectangle);
       gimp_rectangle_tool_control (tool, GIMP_TOOL_ACTION_HALT, display);
@@ -773,6 +773,8 @@ gimp_rectangle_select_tool_execute (GimpRectangleTool *rectangle,
 
           gimp_rectangle_tool_set_function (rectangle,
                                             GIMP_RECTANGLE_TOOL_MOVING);
+          gimp_rectangle_select_tool_update_option_defaults (rect_sel_tool,
+                                                             FALSE);
 
           return FALSE;
         }

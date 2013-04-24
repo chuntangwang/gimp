@@ -38,9 +38,11 @@
 #include "gimpdisplayshell-appearance.h"
 #include "gimpdisplayshell-callbacks.h"
 #include "gimpdisplayshell-draw.h"
+#include "gimpdisplayshell-scale.h"
 #include "gimpdisplayshell-scroll.h"
 #include "gimpdisplayshell-selection.h"
 #include "gimpdisplayshell-title.h"
+#include "gimpdisplayxfer.h"
 #include "gimpimagewindow.h"
 #include "gimpnavigationeditor.h"
 
@@ -61,11 +63,9 @@ static gboolean   gimp_display_shell_hscrollbar_change_value  (GtkRange         
                                                                gdouble           value,
                                                                GimpDisplayShell *shell);
 
-static void       gimp_display_shell_canvas_expose_image      (GimpDisplayShell *shell,
-                                                               GdkEventExpose   *eevent,
+static void       gimp_display_shell_canvas_draw_image        (GimpDisplayShell *shell,
                                                                cairo_t          *cr);
-static void       gimp_display_shell_canvas_expose_drop_zone  (GimpDisplayShell *shell,
-                                                               GdkEventExpose   *eevent,
+static void       gimp_display_shell_canvas_draw_drop_zone    (GimpDisplayShell *shell,
                                                                cairo_t          *cr);
 
 
@@ -109,6 +109,8 @@ gimp_display_shell_canvas_realize (GtkWidget        *canvas,
 
   /*  allow shrinking  */
   gtk_widget_set_size_request (GTK_WIDGET (shell), 0, 0);
+
+  shell->xfer = gimp_display_xfer_realize (GTK_WIDGET(shell));
 }
 
 void
@@ -169,7 +171,7 @@ gimp_display_shell_canvas_size_allocate (GtkWidget        *widget,
           gint     sw;
           gint     sh;
 
-          gimp_display_shell_draw_get_scaled_image_size (shell, &sw, &sh);
+          gimp_display_shell_scale_get_image_size (shell, &sw, &sh);
 
           center_horizontally = sw <= shell->disp_width;
           center_vertically   = sh <= shell->disp_height;
@@ -256,11 +258,11 @@ gimp_display_shell_canvas_expose (GtkWidget        *widget,
 
       if (gimp_display_get_image (shell->display))
         {
-          gimp_display_shell_canvas_expose_image (shell, eevent, cr);
+          gimp_display_shell_canvas_draw_image (shell, cr);
         }
       else
         {
-          gimp_display_shell_canvas_expose_drop_zone (shell, eevent, cr);
+          gimp_display_shell_canvas_draw_drop_zone (shell, cr);
         }
 
       cairo_destroy (cr);
@@ -449,115 +451,108 @@ gimp_display_shell_vscrollbar_change_value (GtkRange         *range,
 }
 
 static void
-gimp_display_shell_canvas_expose_image (GimpDisplayShell *shell,
-                                        GdkEventExpose   *eevent,
-                                        cairo_t          *cr)
+gimp_display_shell_canvas_draw_image (GimpDisplayShell *shell,
+                                      cairo_t          *cr)
 {
-  GdkRegion    *clear_region;
-  GdkRegion    *image_region;
-  GdkRectangle  image_rect;
-  GdkRectangle *rects;
-  gint          n_rects;
-  gint          i;
+  cairo_rectangle_list_t *clip_rectangles;
+  cairo_rectangle_int_t   image_rect;
+
+  image_rect.x = - shell->offset_x;
+  image_rect.y = - shell->offset_y;
+  gimp_display_shell_scale_get_image_size (shell,
+                                           &image_rect.width,
+                                           &image_rect.height);
+
 
   /*  first, clear the exposed part of the region that is outside the
    *  image, which is the exposed region minus the image rectangle
    */
 
-  clear_region = gdk_region_copy (eevent->region);
+  cairo_save (cr);
 
-  image_rect.x = - shell->offset_x;
-  image_rect.y = - shell->offset_y;
-  gimp_display_shell_draw_get_scaled_image_size (shell,
-                                                 &image_rect.width,
-                                                 &image_rect.height);
-  image_region = gdk_region_rectangle (&image_rect);
+  if (shell->rotate_transform)
+    cairo_transform (cr, shell->rotate_transform);
 
-  gdk_region_subtract (clear_region, image_region);
-  gdk_region_destroy (image_region);
+  cairo_rectangle (cr,
+                   image_rect.x,
+                   image_rect.y,
+                   image_rect.width,
+                   image_rect.height);
 
-  if (! gdk_region_empty (clear_region))
-    {
-      gdk_region_get_rectangles (clear_region, &rects, &n_rects);
+  cairo_set_fill_rule (cr, CAIRO_FILL_RULE_EVEN_ODD);
+  cairo_clip (cr);
 
-      for (i = 0; i < n_rects; i++)
-        gdk_window_clear_area (gtk_widget_get_window (shell->canvas),
-                               rects[i].x,
-                               rects[i].y,
-                               rects[i].width,
-                               rects[i].height);
+  if (gdk_cairo_get_clip_rectangle (cr, NULL))
+    gimp_display_shell_draw_background (shell, cr);
 
-      g_free (rects);
-    }
+  cairo_restore (cr);
+
 
   /*  then, draw the exposed part of the region that is inside the
-   *  image, which is the exposed region minus the region used for
-   *  clearing above
+   *  image
    */
 
-  image_region = gdk_region_copy (eevent->region);
+  cairo_save (cr);
+  clip_rectangles = cairo_copy_clip_rectangle_list (cr);
 
-  gdk_region_subtract (image_region, clear_region);
-  gdk_region_destroy (clear_region);
+  if (shell->rotate_transform)
+    cairo_transform (cr, shell->rotate_transform);
 
-  if (! gdk_region_empty (image_region))
+  cairo_rectangle (cr,
+                   image_rect.x,
+                   image_rect.y,
+                   image_rect.width,
+                   image_rect.height);
+  cairo_clip (cr);
+
+  if (gdk_cairo_get_clip_rectangle (cr, NULL))
     {
-      cairo_save (cr);
-      gimp_display_shell_draw_checkerboard (shell, cr,
-                                            image_rect.x,
-                                            image_rect.y,
-                                            image_rect.width,
-                                            image_rect.height);
-      cairo_restore (cr);
-
+      gint i;
 
       cairo_save (cr);
-      gdk_region_get_rectangles (image_region, &rects, &n_rects);
-
-      for (i = 0; i < n_rects; i++)
-        gimp_display_shell_draw_image (shell, cr,
-                                       rects[i].x,
-                                       rects[i].y,
-                                       rects[i].width,
-                                       rects[i].height);
-
-      g_free (rects);
+      gimp_display_shell_draw_checkerboard (shell, cr);
       cairo_restore (cr);
+
+      for (i = 0; i < clip_rectangles->num_rectangles; i++)
+        {
+          cairo_rectangle_t rect = clip_rectangles->rectangles[i];
+
+          gimp_display_shell_draw_image (shell, cr,
+                                         floor (rect.x),
+                                         floor (rect.y),
+                                         ceil (rect.width),
+                                         ceil (rect.height));
+        }
     }
 
-  gdk_region_destroy (image_region);
+  cairo_rectangle_list_destroy (clip_rectangles);
+  cairo_restore (cr);
+
 
   /*  finally, draw all the remaining image window stuff on top
    */
 
   /* draw canvas items */
+  cairo_save (cr);
+
+  if (shell->rotate_transform)
+    cairo_transform (cr, shell->rotate_transform);
+
   gimp_canvas_item_draw (shell->canvas_item, cr);
+
+  cairo_restore (cr);
+
+  gimp_canvas_item_draw (shell->unrotated_item, cr);
 
   /* restart (and recalculate) the selection boundaries */
   gimp_display_shell_selection_restart (shell);
 }
 
 static void
-gimp_display_shell_canvas_expose_drop_zone (GimpDisplayShell *shell,
-                                            GdkEventExpose   *eevent,
-                                            cairo_t          *cr)
+gimp_display_shell_canvas_draw_drop_zone (GimpDisplayShell *shell,
+                                          cairo_t          *cr)
 {
-  GdkRectangle *rects;
-  gint          n_rects;
-  gint          i;
-
-  gdk_region_get_rectangles (eevent->region, &rects, &n_rects);
-
-  for (i = 0; i < n_rects; i++)
-    {
-      gdk_window_clear_area (gtk_widget_get_window (shell->canvas),
-                             rects[i].x,
-                             rects[i].y,
-                             rects[i].width,
-                             rects[i].height);
-    }
-
-  g_free (rects);
+  gimp_display_shell_draw_background (shell, cr);
 
   gimp_cairo_draw_drop_wilber (shell->canvas, cr);
 }

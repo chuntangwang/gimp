@@ -19,6 +19,8 @@ libappdisplay_a_sources = \
 	display-types.h				\
 	gimpcanvas.c				\
 	gimpcanvas.h				\
+	gimpcanvas-style.c			\
+	gimpcanvas-style.h			\
 	gimpcanvasarc.c				\
 	gimpcanvasarc.h				\
 	gimpcanvasboundary.c			\
@@ -111,6 +113,10 @@ libappdisplay_a_sources = \
 	gimpdisplayshell-progress.h		\
 	gimpdisplayshell-render.c		\
 	gimpdisplayshell-render.h		\
+	gimpdisplayshell-rotate.c		\
+	gimpdisplayshell-rotate.h		\
+	gimpdisplayshell-rotate-dialog.c	\
+	gimpdisplayshell-rotate-dialog.h	\
 	gimpdisplayshell-scale.c		\
 	gimpdisplayshell-scale.h		\
 	gimpdisplayshell-scale-dialog.c		\
@@ -119,14 +125,14 @@ libappdisplay_a_sources = \
 	gimpdisplayshell-scroll.h		\
 	gimpdisplayshell-selection.c		\
 	gimpdisplayshell-selection.h		\
-	gimpdisplayshell-style.c		\
-	gimpdisplayshell-style.h		\
 	gimpdisplayshell-title.c		\
 	gimpdisplayshell-title.h		\
 	gimpdisplayshell-tool-events.c		\
 	gimpdisplayshell-tool-events.h		\
 	gimpdisplayshell-transform.c		\
 	gimpdisplayshell-transform.h		\
+	gimpdisplayxfer.c			\
+	gimpdisplayxfer.h			\
 	gimpimagewindow.c			\
 	gimpimagewindow.h			\
 	gimpmotionbuffer.c			\

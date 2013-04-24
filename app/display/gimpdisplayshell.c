@@ -36,6 +36,7 @@
 #include "config/gimpdisplayoptions.h"
 
 #include "core/gimp.h"
+#include "core/gimp-utils.h"
 #include "core/gimpchannel.h"
 #include "core/gimpcontext.h"
 #include "core/gimpimage.h"
@@ -67,6 +68,7 @@
 #include "gimpdisplayshell-items.h"
 #include "gimpdisplayshell-progress.h"
 #include "gimpdisplayshell-render.h"
+#include "gimpdisplayshell-rotate.h"
 #include "gimpdisplayshell-scale.h"
 #include "gimpdisplayshell-scroll.h"
 #include "gimpdisplayshell-selection.h"
@@ -105,6 +107,7 @@ enum
 {
   SCALED,
   SCROLLED,
+  ROTATED,
   RECONNECT,
   LAST_SIGNAL
 };
@@ -144,6 +147,7 @@ static void      gimp_display_shell_screen_changed (GtkWidget        *widget,
 static gboolean  gimp_display_shell_popup_menu     (GtkWidget        *widget);
 
 static void      gimp_display_shell_real_scaled    (GimpDisplayShell *shell);
+static void      gimp_display_shell_real_rotated   (GimpDisplayShell *shell);
 
 static const guint8 * gimp_display_shell_get_icc_profile
                                                    (GimpColorManaged *managed,
@@ -213,6 +217,15 @@ gimp_display_shell_class_init (GimpDisplayShellClass *klass)
                   gimp_marshal_VOID__VOID,
                   G_TYPE_NONE, 0);
 
+  display_shell_signals[ROTATED] =
+    g_signal_new ("rotated",
+                  G_TYPE_FROM_CLASS (klass),
+                  G_SIGNAL_RUN_FIRST,
+                  G_STRUCT_OFFSET (GimpDisplayShellClass, rotated),
+                  NULL, NULL,
+                  gimp_marshal_VOID__VOID,
+                  G_TYPE_NONE, 0);
+
   display_shell_signals[RECONNECT] =
     g_signal_new ("reconnect",
                   G_TYPE_FROM_CLASS (klass),
@@ -234,6 +247,7 @@ gimp_display_shell_class_init (GimpDisplayShellClass *klass)
 
   klass->scaled                    = gimp_display_shell_real_scaled;
   klass->scrolled                  = NULL;
+  klass->rotated                   = gimp_display_shell_real_rotated;
   klass->reconnect                 = NULL;
 
   g_object_class_install_property (object_class, PROP_POPUP_MANAGER,
@@ -294,14 +308,6 @@ gimp_display_shell_init (GimpDisplayShell *shell)
   shell->dot_for_dot = TRUE;
   shell->scale_x     = 1.0;
   shell->scale_y     = 1.0;
-  shell->x_dest_inc  = 1;
-  shell->y_dest_inc  = 1;
-  shell->x_src_dec   = 1;
-  shell->y_src_dec   = 1;
-
-  shell->render_surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
-                                                      GIMP_DISPLAY_RENDER_BUF_WIDTH,
-                                                      GIMP_DISPLAY_RENDER_BUF_HEIGHT);
 
   gimp_display_shell_items_init (shell);
 
@@ -781,12 +787,6 @@ gimp_display_shell_dispose (GObject *object)
       shell->filter_idle_id = 0;
     }
 
-  if (shell->render_surface)
-    {
-      cairo_surface_destroy (shell->render_surface);
-      shell->render_surface = NULL;
-    }
-
   if (shell->mask_surface)
     {
       cairo_surface_destroy (shell->mask_surface);
@@ -854,6 +854,12 @@ gimp_display_shell_finalize (GObject *object)
   GimpDisplayShell *shell = GIMP_DISPLAY_SHELL (object);
 
   g_object_unref (shell->zoom);
+
+  if (shell->rotate_transform)
+    g_free (shell->rotate_transform);
+
+  if (shell->rotate_untransform)
+    g_free (shell->rotate_untransform);
 
   if (shell->options)
     g_object_unref (shell->options);
@@ -1009,6 +1015,20 @@ gimp_display_shell_real_scaled (GimpDisplayShell *shell)
     return;
 
   gimp_display_shell_title_update (shell);
+
+  user_context = gimp_get_user_context (shell->display->gimp);
+
+  if (shell->display == gimp_context_get_display (user_context))
+    gimp_ui_manager_update (shell->popup_manager, shell->display);
+}
+
+static void
+gimp_display_shell_real_rotated (GimpDisplayShell *shell)
+{
+  GimpContext *user_context;
+
+  if (! shell->display)
+    return;
 
   user_context = gimp_get_user_context (shell->display->gimp);
 
@@ -1338,6 +1358,9 @@ gimp_display_shell_empty (GimpDisplayShell *shell)
   /*  so wilber doesn't flicker  */
   gtk_widget_set_double_buffered (shell->canvas, TRUE);
 
+  shell->rotate_angle = 0.0;
+  gimp_display_shell_rotate_update_transform (shell);
+
   gimp_display_shell_expose_full (shell);
 
   user_context = gimp_get_user_context (shell->display->gimp);
@@ -1422,27 +1445,11 @@ gimp_display_shell_scale_changed (GimpDisplayShell *shell)
                                                   gimp_zoom_model_get_factor (shell->zoom),
                                                   &shell->scale_x,
                                                   &shell->scale_y);
-
-      shell->x_dest_inc = gimp_image_get_width  (image);
-      shell->y_dest_inc = gimp_image_get_height (image);
-      shell->x_src_dec  = shell->scale_x * shell->x_dest_inc;
-      shell->y_src_dec  = shell->scale_y * shell->y_dest_inc;
-
-      if (shell->x_src_dec < 1)
-        shell->x_src_dec = 1;
-
-      if (shell->y_src_dec < 1)
-        shell->y_src_dec = 1;
     }
   else
     {
       shell->scale_x = 1.0;
       shell->scale_y = 1.0;
-
-      shell->x_dest_inc = 1;
-      shell->y_dest_inc = 1;
-      shell->x_src_dec  = 1;
-      shell->y_src_dec  = 1;
     }
 }
 
@@ -1452,6 +1459,8 @@ gimp_display_shell_scaled (GimpDisplayShell *shell)
   GList *list;
 
   g_return_if_fail (GIMP_IS_DISPLAY_SHELL (shell));
+
+  gimp_display_shell_rotate_update_transform (shell);
 
   for (list = shell->children; list; list = g_list_next (list))
     {
@@ -1474,6 +1483,8 @@ gimp_display_shell_scrolled (GimpDisplayShell *shell)
 
   g_return_if_fail (GIMP_IS_DISPLAY_SHELL (shell));
 
+  gimp_display_shell_rotate_update_transform (shell);
+
   for (list = shell->children; list; list = g_list_next (list))
     {
       GtkWidget *child = list->data;
@@ -1486,6 +1497,16 @@ gimp_display_shell_scrolled (GimpDisplayShell *shell)
     }
 
   g_signal_emit (shell, display_shell_signals[SCROLLED], 0);
+}
+
+void
+gimp_display_shell_rotated (GimpDisplayShell *shell)
+{
+  g_return_if_fail (GIMP_IS_DISPLAY_SHELL (shell));
+
+  gimp_display_shell_rotate_update_transform (shell);
+
+  g_signal_emit (shell, display_shell_signals[ROTATED], 0);
 }
 
 void
@@ -1615,6 +1636,8 @@ gimp_display_shell_mask_bounds (GimpDisplayShell *shell,
   GimpLayer *layer;
   gdouble    x1_f, y1_f;
   gdouble    x2_f, y2_f;
+  gdouble    x3_f, y3_f;
+  gdouble    x4_f, y4_f;
 
   g_return_val_if_fail (GIMP_IS_DISPLAY_SHELL (shell), FALSE);
   g_return_val_if_fail (x1 != NULL, FALSE);
@@ -1655,13 +1678,15 @@ gimp_display_shell_mask_bounds (GimpDisplayShell *shell,
     }
 
   gimp_display_shell_transform_xy_f (shell, *x1, *y1, &x1_f, &y1_f);
-  gimp_display_shell_transform_xy_f (shell, *x2, *y2, &x2_f, &y2_f);
+  gimp_display_shell_transform_xy_f (shell, *x1, *y2, &x2_f, &y2_f);
+  gimp_display_shell_transform_xy_f (shell, *x2, *y1, &x3_f, &y3_f);
+  gimp_display_shell_transform_xy_f (shell, *x2, *y2, &x4_f, &y4_f);
 
   /*  Make sure the extents are within bounds  */
-  *x1 = CLAMP (floor (x1_f), 0, shell->disp_width);
-  *y1 = CLAMP (floor (y1_f), 0, shell->disp_height);
-  *x2 = CLAMP (ceil (x2_f),  0, shell->disp_width);
-  *y2 = CLAMP (ceil (y2_f),  0, shell->disp_height);
+  *x1 = CLAMP (floor (MIN4 (x1_f, x2_f, x3_f, x4_f)), 0, shell->disp_width);
+  *y1 = CLAMP (floor (MIN4 (y1_f, y2_f, y3_f, y4_f)), 0, shell->disp_height);
+  *x2 = CLAMP (ceil (MAX4 (x1_f, x2_f, x3_f, x4_f)),  0, shell->disp_width);
+  *y2 = CLAMP (ceil (MAX4 (y1_f, y2_f, y3_f, y4_f)),  0, shell->disp_height);
 
   return ((*x2 - *x1) > 0) && ((*y2 - *y1) > 0);
 }

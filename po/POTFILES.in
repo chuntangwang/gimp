@@ -42,6 +42,7 @@ app/actions/error-console-commands.c
 app/actions/file-actions.c
 app/actions/file-commands.c
 app/actions/filters-actions.c
+app/actions/filters-commands.c
 app/actions/fonts-actions.c
 app/actions/gradient-editor-actions.c
 app/actions/gradient-editor-commands.c
@@ -217,6 +218,7 @@ app/display/gimpdisplayshell-dnd.c
 app/display/gimpdisplayshell-filter-dialog.c
 app/display/gimpdisplayshell-handlers.c
 app/display/gimpdisplayshell-layer-select.c
+app/display/gimpdisplayshell-rotate-dialog.c
 app/display/gimpdisplayshell-scale-dialog.c
 app/display/gimpdisplayshell-title.c
 app/display/gimpnavigationeditor.c
@@ -446,6 +448,7 @@ app/widgets/gimpgradienteditor.c
 app/widgets/gimpgrideditor.c
 app/widgets/gimphelp.c
 app/widgets/gimphistogrameditor.c
+app/widgets/gimpiconpicker.c
 app/widgets/gimpimagecommenteditor.c
 app/widgets/gimpimageprofileview.c
 app/widgets/gimpimagepropview.c

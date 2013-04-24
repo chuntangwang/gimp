@@ -45,7 +45,7 @@
  *
  * The method used here is similar to the lighting invariant correctin
  * method but slightly different: we do not divide the RGB components,
- * but substract them I2 = I0 - I1, where I0 is the sample image to be
+ * but subtract them I2 = I0 - I1, where I0 is the sample image to be
  * corrected, I1 is the reference pattern. Then we solve DeltaI=0
  * (Laplace) with I2 Dirichlet conditions at the borders of the
  * mask. The solver is a unoptimized red/black checker Gauss-Siedel
@@ -355,7 +355,7 @@ gimp_heal_laplace_loop (gdouble *matrix,
                         gdouble *solution,
                         guchar  *mask)
 {
-#define EPSILON   0.001
+#define EPSILON   1e-8
 #define MAX_ITER  500
   gint i;
 
@@ -430,7 +430,7 @@ gimp_heal (GeglBuffer          *src_buffer,
                                       GEGL_AUTO_ROWSTRIDE,
                                       (GDestroyNotify) g_free, i_2);
 
-  /* substract pattern from image and store the result as a double in i_1 */
+  /* subtract pattern from image and store the result as a double in i_1 */
   gimp_heal_sub (dest_buffer, dest_rect,
                  src_buffer, src_rect,
                  i_1_buffer, GEGL_RECTANGLE (0, 0, width, height));
@@ -510,11 +510,11 @@ gimp_heal_motion (GimpSourceCore   *source_core,
       return;
     }
 
-  src_copy =
-    gegl_buffer_new (GEGL_RECTANGLE (0, 0,
-                                     src_rect->width,
-                                     src_rect->height),
-                     babl_format ("RGBA float"));
+  /*  heal should work in perceptual space, use R'G'B' instead of RGB  */
+  src_copy = gegl_buffer_new (GEGL_RECTANGLE (0, 0,
+                                              src_rect->width,
+                                              src_rect->height),
+                              babl_format ("R'G'B'A float"));
 
   gegl_buffer_copy (src_buffer,
                     src_rect,
@@ -522,6 +522,9 @@ gimp_heal_motion (GimpSourceCore   *source_core,
                     GEGL_RECTANGLE (0, 0,
                                     src_rect->width,
                                     src_rect->height));
+
+  /*  this is ok because we know that the paint_buffer is "RGBA float"  */
+  gegl_buffer_set_format (paint_buffer, babl_format ("R'G'B'A float"));
 
   gegl_buffer_copy (gimp_drawable_get_buffer (drawable),
                     GEGL_RECTANGLE (paint_buffer_x, paint_buffer_y,
